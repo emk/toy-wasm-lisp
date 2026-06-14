@@ -1,0 +1,8 @@
+;; Top-level file for the toy Lisp runtime.
+;;
+;; Our job here is to include all the other files, using the %INCLUDE
+;; WAT macro.
+(module $toy_lisp_runtime.wasm
+  (%include "runtime/system.watm")
+  (%include "runtime/types.watm")
+  )

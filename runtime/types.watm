@@ -1,0 +1,19 @@
+(module $toy_lisp_runtime.wasm
+  ;; Core Lisp types.
+  ;;
+  ;; We put these into a (rec) mostly because it supposedly adds some
+  ;; limited measure of nominal typing for things like downcasting.
+  ;; As I understand it, WASM uses structural equivalence, but it uses
+  ;; it across the entire (rec)?
+  (rec
+    (type $str (array i8))
+    (type $symbol
+      (struct
+        (field $name (ref $str))
+        (field $value (mut (ref null any)))
+        ;; TODO: Probably want a closure type here.
+        (field $function (mut (ref null any)))))
+    (type $cons
+      (struct
+        (field $car (mut (ref any)))
+        (field $cdr (mut (ref any)))))))
