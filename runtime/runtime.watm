@@ -4,5 +4,6 @@
 ;; WAT macro.
 (module $toy_lisp_runtime.wasm
   (%include "runtime/system.watm")
+  (%include "runtime/memory.watm")
   (%include "runtime/types.watm")
   )

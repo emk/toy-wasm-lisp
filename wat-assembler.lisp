@@ -107,18 +107,13 @@ so some rough edges are acceptable."
   "Print FORM to PATH, preserving case."
   (with-open-file (stream path
                    :if-does-not-exist :create
-                   :if-exists :overwrite
+                   :if-exists :supersede
                    :direction :output)
     (print-wat form stream)))
 
-(define-wat-macro |%call| (FUNC &rest ARGS)
-  "Push ARGS and call FUNC."
-  #w`[,@ARGS
-      call ,FUNC])
-
 (define-wat-macro |%cons| (CAR-EXPR CDR-EXPR)
   "Build a cons cell."
-  #w`(%call $prim_mkcons ,CAR-EXPR ,CDR-EXPR))
+  #w`(call $prim_mkcons ,CAR-EXPR ,CDR-EXPR))
 
 (define-wat-macro |%include| (path)
   "Split the contents of PATH at the current location.
@@ -128,6 +123,23 @@ so some rough edges are acceptable."
   (let* ((form (read-wat-file path))
          (BODY (cddr form)))
     #w`[,@BODY]))
+
+(define-wat-macro |%enter| (BYTES)
+  "Push a stack frame onto the linear stack.
+
+  Only needed for functions that use the linear stack."
+  ;; TODO: Force 16-byte alignment.
+  #w`[(local $BP i32)
+      (local $FP i32)
+      (global.get $SP)
+      (local.tee $BP)
+      (i32.sub (i32.const ,BYTES))
+      (local.tee $FP)
+      (global.set $SP)])
+
+(define-wat-macro |%leave| ()
+  "Pop a stack frame from the linear stack."
+  #w`(global.set $SP (local.get $BP)))
 
 (defun build-runtime ()
   "Build our toy Lisp runtime as WAT and WASM."
@@ -143,9 +155,9 @@ so some rough edges are acceptable."
 #|
 (print-wat
   (assemble-wat
-    #w'(func $example (type $example_type)
-          (%cons [global.get $nil] [global.get $nil])
-          drop)))
+    #w'(func $example
+          (%cons (global.get $nil) (global.get $nil))
+          (drop))))
 
 (print-wat (assemble-wat-file "runtime/runtime.watm"))
 |#

@@ -1,5 +1,54 @@
 (module $toy_lisp_runtime.wasm
-  (type $fd_write_type (func (param i32 i32 i32 i32) (result i32)))
-  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (type $fd_write_type)))
-  (type $proc_exit_type (func (param i32)))
-  (import "wasi_snapshot_preview1" "proc_exit" (func $proc_exit (type $proc_exit_type))))
+  (import "wasi_snapshot_preview1" "fd_write"
+    (func $fd_write
+      (param $fd i32)
+      (param $iovs i32)
+      (param $iovs_len i32)
+      (param $nwritten_ptr i32)
+      ;; errno code
+      (result i32)))
+
+  (import "wasi_snapshot_preview1" "proc_exit"
+    (func $proc_exit
+      (param $exitcode i32)))
+
+  (func $print_linear
+    (param $fd i32)
+    (param $buf i32)
+    (param $buf_len i32)
+
+    (local $nwritten i32)
+
+    (%enter 32)
+
+    (loop $write_next
+      ;; Do we have anything to print?
+      (i32.gt_s (local.get $buf_len) (i32.const 0))
+      (if (then
+        (i32.store offset=0 (local.get $FP) (local.get $buf))
+        (i32.store offset=4 (local.get $FP) (local.get $buf_len))
+        (i32.store offset=8 (local.get $FP) (i32.const 0))
+
+        (call $fd_write
+          (local.get $fd) (local.get $FP) (i32.const 1)
+          (i32.add (local.get $FP) (i32.const 8)))
+
+        ;; Non-zero errno, can't print, bail.
+        (if (then (call $proc_exit (i32.const 1))))
+
+        ;; How many bytes did we write?
+        (local.set $nwritten (i32.add (local.get $FP) (i32.const 8)))
+
+        ;; Output zero bytes? Then bail.
+        (i32.eq (local.get $nwritten) (i32.const 0))
+        (if (then (call $proc_exit (i32.const 1))))
+
+        (local.set $buf (i32.add (local.get $buf) (local.get $nwritten)))
+        (local.set $buf_len (i32.sub (local.get $buf) (local.get $nwritten)))
+
+        )))
+
+    (%leave)
+    )
+
+  )

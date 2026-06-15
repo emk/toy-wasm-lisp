@@ -1,6 +1,6 @@
 # WORK IN PROGRESS: Toy Lisp for WASM
 
-This does not do anything yet.
+This does not do anything yet. I am experimenting with various ill-conceived macroassembler ideas as a way of forcing myself to learn low-level WASM GC details.
 
 Building:
 

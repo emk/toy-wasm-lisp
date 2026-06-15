@@ -51,48 +51,54 @@
       (ref.null any)
       (ref.null any)))
 
-  (type $prim_cons_type (func (param (ref any) (ref any)) (result (ref any))))
-  (func $prim_mkcons (type $prim_cons_type)
+  ;;(type $prim_cons_type (func  ))
+
+  (func $prim_mkcons ;;(type $prim_cons_type)
+    (param $car (ref any))
+    (param $cdr (ref any))
+    (result (ref any))
     (struct.new $cons
-      (local.get 0)
-      (local.get 1)))
+      (local.get $car)
+      (local.get $cdr)))
 
-  (type $_start_type (func))
-  (export "_start" (func $_start))
-  (func $_start (type $_start_type)
-    (local i32)
-    global.get $__stack_pointer
-    i32.const 16
-    i32.sub
-    local.tee 0
-    global.set $__stack_pointer
-    local.get 0
-    i32.const 14
-    i32.store offset=8
-    local.get 0
-    i32.const 1048576
-    i32.store offset=4
-    local.get 0
-    i32.const 0
-    i32.store offset=12
-    i32.const 1
-    local.get 0
-    i32.const 4
-    i32.add
-    i32.const 1
-    local.get 0
-    i32.const 12
-    i32.add
-    call $fd_write
-    drop
+  (func (export "_start")
+    ;; Frame pointer?
+    (local $__fp i32)
 
-    global.get $nil
-    global.get $nil
-    call $prim_mkcons
-    drop
+    ;; Reserve 16 bytes for stack frame.
+    ;; $__stack_pointer+12: iovs[0].buf
+    ;; $__stack_pointer+8: iovs[0].buf_len
+    ;; $__stack_pointer+4: iovs[0].buf
+    ;; $__stack_pointer+0: ???
+    (i32.sub (global.get $__stack_pointer) (i32.const 16))
+    (local.tee $__fp)
+    (global.set $__stack_pointer)
 
-    i32.const 0
-    call $proc_exit
+    ;; Build iovs.
+    (i32.store offset=8 (local.get $__fp) (i32.const 14)) ;; iovs[0].buf_len
+    (i32.store offset=4 (local.get $__fp) (i32.const 1048576)) ;; iovs[0].buf
+
+    ;; Build nwritten (output).
+    (i32.store offset=12 (local.get $__fp) (i32.const 0))
+
+    ;; Param fd.
+    (i32.const 1)
+
+    ;; Param iovs.
+    (i32.add (local.get $__fp) (i32.const 4))
+
+    ;; Param iovs_len.
+    (i32.const 1)
+
+    ;; Param &nwritten.
+    (i32.add (local.get $__fp) (i32.const 12))
+    (call $fd_write)
+    (drop)
+
+    (call $prim_mkcons (global.get $nil) (global.get $nil))
+    (drop)
+
+    (call $proc_exit (i32.const 0))
     unreachable)
   (data $.rodata
     (i32.const 1048576) "Hello, world!\0a"))
