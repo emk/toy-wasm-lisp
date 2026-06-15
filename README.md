@@ -6,5 +6,6 @@ Building:
 
 ```sh
 sbcl --load wat-assembler.lisp --quit &&
-  wasm-tools parse runtime/runtime.wat -o runtime/runtime.wasm
+  wasm-tools parse runtime/runtime.wat -o runtime/runtime.wasm &&
+  wasmtime -W gc runtime/runtime.wasm
 ```

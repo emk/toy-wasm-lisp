@@ -1,5 +1,4 @@
 (module $toy_lisp_runtime.wasm
-  (memory $memory 17)
-
+  (memory (export "memory") 17)
   (global $SP (mut i32) (i32.const 1048576))
   )

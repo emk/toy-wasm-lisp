@@ -1,0 +1,15 @@
+;; Runtime entry point.
+(module $toy_lisp_runtime.wasm
+
+  (func (export "_start")
+    (%enter 16)
+
+    (memory.init $hello_str (local.get $FP) (i32.const 0) (i32.const 13))
+    (i32.store offset=13 (local.get $FP) (i32.const 10)) ;; Add newline.
+    (call $print_linear (i32.const 1) (local.get $FP) (i32.const 14))
+
+    (%leave)
+    (call $proc_exit (i32.const 0)))
+
+  (data $hello_str "Hello, world!") ; 13 bytes
+  )

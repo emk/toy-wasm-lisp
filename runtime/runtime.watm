@@ -6,4 +6,4 @@
   (%include "runtime/system.watm")
   (%include "runtime/memory.watm")
   (%include "runtime/types.watm")
-  )
+  (%include "runtime/start.watm"))
