@@ -12,6 +12,7 @@
     (func $proc_exit
       (param $exitcode i32)))
 
+  ;; Print a "linear" string which exists in accessible memory.
   (func $print_linear
     (param $fd i32)
     (param $buf i32)
@@ -19,7 +20,7 @@
 
     (local $nwritten i32)
 
-    (%enter 32)
+    (%enter 16)
 
     (loop $write_next
       ;; Do we have anything to print?
@@ -48,7 +49,61 @@
 
         )))
 
-    (%leave)
-    )
+    (%leave))
+
+  ;; Buffer size for $print_str.
+  (global $print_str_slice_max i32 (i32.const 32))
+
+  ;; Print
+  (func $print_str
+    (param $fd i32)
+    (param $text (ref $str))
+
+    (local $begin i32) ;; The beginning index to print.
+    (local $end i32) ;; The end index to print (exclusive).
+    (local $slice_end i32) ;; The end index of the current slice.
+    (local $i i32) ;; inner loop index for our linear stack buffer.
+
+    (%enter 32) ;; $print_str_slice_max
+
+    ;; The portion of the string left to print.
+    (local.set $begin (i32.const 0))
+    (local.set $end (array.len (local.get $text)))
+
+    ;; While $begin < $end.
+    (loop $next_slice
+      (i32.lt_s (local.get $begin) (local.get $end))
+      (if (then
+
+        ;; $slice_end = min($begin + 32, $end)
+        (local.set $slice_end
+          (i32.add (local.get $begin) (global.get $print_str_slice_max)))
+        (i32.gt_s (local.get $slice_end) (local.get $end))
+        (if (then
+          (local.set $slice_end (local.get $end))))
+
+        ;; While $begin < $slice_end.
+        (local.set $i (i32.const 0))
+        (loop $next_byte
+          (i32.lt_s (local.get $begin) (local.get $slice_end))
+          (if (then
+
+            ;; buf[i] = text[begin]
+            (i32.store8
+              (i32.add (local.get $FP) (local.get $i))
+              (array.get_s $str (local.get $text) (local.get $begin)))
+
+            ;; i += i
+            ;; begin += 1
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (local.set $begin (i32.add (local.get $begin) (i32.const 1)))
+
+            (br $next_byte))))
+
+        (call $print_linear (local.get $fd) (local.get $FP) (local.get $i))
+
+        (br $next_slice))))
+
+    (%leave))
 
   )

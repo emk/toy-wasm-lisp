@@ -141,6 +141,16 @@ so some rough edges are acceptable."
   "Pop a stack frame from the linear stack."
   #w`(global.set $SP (local.get $BP)))
 
+; (defun str-to-ints (s)
+;   "Map S to a list of ASCII codes."
+;   (map 'list (lambda (c) `(|i32.const| ,(char-code c))) s))
+
+(define-wat-macro |%const_str| (s)
+  "Construct an array.new_fixed containing S on the GC heap."
+  (let* ((INTS (map 'list (lambda (c) `(|i32.const| ,(char-code c))) s))
+         (LEN (list-length INTS)))
+    #w`(array.new_fixed $str ,LEN ,@INTS)))
+
 (defun build-runtime ()
   "Build our toy Lisp runtime as WAT and WASM."
   (let ((wat (assemble-wat-file "runtime/runtime.watm")))
