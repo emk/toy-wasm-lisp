@@ -8,6 +8,7 @@ use wasmtime::{Engine, Linker, Module, Store};
 
 use crate::{emit::emit_func, parser::parse};
 
+mod ast;
 mod emit;
 mod errors;
 mod parser;

@@ -22,7 +22,7 @@ pub mod grammar {
     #[derive(Debug)]
     pub struct Func {
         #[rust_sitter::leaf(text = "export")]
-        export: Option<()>,
+        pub export: Option<()>,
 
         #[rust_sitter::leaf(text = "func")]
         _func: (),
@@ -31,12 +31,6 @@ pub mod grammar {
         pub params: Params,
         pub returns: Option<Returns>,
         pub body: Spanned<Block>,
-    }
-
-    impl Func {
-        pub fn is_exported(&self) -> bool {
-            self.export.is_some()
-        }
     }
 
     #[derive(Debug)]
