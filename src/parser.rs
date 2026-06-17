@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use miette::{NamedSource, Result};
+use tracing::debug;
 
 use crate::errors::ParseErrors;
 
 pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Expr> {
+    debug!(%filename, %src, "Parsing");
     let src = Arc::new(NamedSource::new(filename, src.to_owned()));
     Ok(
         grammar::parse(src.as_ref().inner())
@@ -40,7 +42,7 @@ mod tests {
     #[test]
     fn successful_parses() {
         assert_eq!(
-            parse("<test", "1 + 2 * 3").unwrap(),
+            parse("<test>", "1 + 2 * 3").unwrap(),
             Expr::Add(
                 Box::new(Expr::Number(1)),
                 (),
