@@ -151,6 +151,14 @@ so some rough edges are acceptable."
          (LEN (list-length INTS)))
     #w`(array.new_fixed $str ,LEN ,@INTS)))
 
+(define-wat-macro |%while| (COND &rest BODY)
+  (let ((LABEL (intern (concatenate 'string "$" (symbol-name (gensym))))))
+    #w`(loop ,LABEL
+         ,COND
+         (if (then
+           ,@BODY
+           (br ,LABEL))))))
+
 (defun build-runtime ()
   "Build our toy Lisp runtime as WAT and WASM."
   (let ((wat (assemble-wat-file "runtime/runtime.watm")))

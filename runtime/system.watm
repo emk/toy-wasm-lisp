@@ -22,32 +22,31 @@
 
     (%enter 16)
 
-    (loop $write_next
-      ;; Do we have anything to print?
-      (i32.gt_s (local.get $buf_len) (i32.const 0))
-      (if (then
-        (i32.store offset=0 (local.get $FP) (local.get $buf))
-        (i32.store offset=4 (local.get $FP) (local.get $buf_len))
-        (i32.store offset=8 (local.get $FP) (i32.const 0))
+    ;; Do we have anything to print?
+    (%while (i32.gt_s (local.get $buf_len) (i32.const 0))
 
-        (call $fd_write
-          (local.get $fd) (local.get $FP) (i32.const 1)
-          (i32.add (local.get $FP) (i32.const 8)))
+      (i32.store offset=0 (local.get $FP) (local.get $buf))
+      (i32.store offset=4 (local.get $FP) (local.get $buf_len))
+      (i32.store offset=8 (local.get $FP) (i32.const 0))
 
-        ;; Non-zero errno, can't print, bail.
-        (if (then (call $proc_exit (i32.const 1))))
+      (call $fd_write
+        (local.get $fd) (local.get $FP) (i32.const 1)
+        (i32.add (local.get $FP) (i32.const 8)))
 
-        ;; How many bytes did we write?
-        (local.set $nwritten (i32.add (local.get $FP) (i32.const 8)))
+      ;; Non-zero errno, can't print, bail.
+      (if (then (call $proc_exit (i32.const 1))))
 
-        ;; Output zero bytes? Then bail.
-        (i32.eq (local.get $nwritten) (i32.const 0))
-        (if (then (call $proc_exit (i32.const 1))))
+      ;; How many bytes did we write?
+      (local.set $nwritten (i32.add (local.get $FP) (i32.const 8)))
 
-        (local.set $buf (i32.add (local.get $buf) (local.get $nwritten)))
-        (local.set $buf_len (i32.sub (local.get $buf) (local.get $nwritten)))
+      ;; Output zero bytes? Then bail.
+      (i32.eq (local.get $nwritten) (i32.const 0))
+      (if (then (call $proc_exit (i32.const 1))))
 
-        )))
+      (local.set $buf (i32.add (local.get $buf) (local.get $nwritten)))
+      (local.set $buf_len (i32.sub (local.get $buf_len) (local.get $nwritten)))
+
+      )
 
     (%leave))
 
@@ -71,38 +70,30 @@
     (local.set $end (array.len (local.get $text)))
 
     ;; While $begin < $end.
-    (loop $next_slice
-      (i32.lt_s (local.get $begin) (local.get $end))
-      (if (then
-
-        ;; $slice_end = min($begin + 32, $end)
-        (local.set $slice_end
-          (i32.add (local.get $begin) (global.get $print_str_slice_max)))
-        (i32.gt_s (local.get $slice_end) (local.get $end))
+    (%while (i32.lt_s (local.get $begin) (local.get $end))
+      ;; $slice_end = min($begin + 32, $end)
+      (local.set $slice_end
+        (i32.add (local.get $begin) (global.get $print_str_slice_max)))
+      (i32.gt_s (local.get $slice_end) (local.get $end))
         (if (then
           (local.set $slice_end (local.get $end))))
 
-        ;; While $begin < $slice_end.
-        (local.set $i (i32.const 0))
-        (loop $next_byte
-          (i32.lt_s (local.get $begin) (local.get $slice_end))
-          (if (then
+      ;; While $begin < $slice_end.
+      (local.set $i (i32.const 0))
+      (%while (i32.lt_s (local.get $begin) (local.get $slice_end))
+        ;; buf[i] = text[begin]
+        (i32.store8
+          (i32.add (local.get $FP) (local.get $i))
+          (array.get_s $str (local.get $text) (local.get $begin)))
 
-            ;; buf[i] = text[begin]
-            (i32.store8
-              (i32.add (local.get $FP) (local.get $i))
-              (array.get_s $str (local.get $text) (local.get $begin)))
+        ;; i += i
+        ;; begin += 1
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (local.set $begin (i32.add (local.get $begin) (i32.const 1)))
+        )
 
-            ;; i += i
-            ;; begin += 1
-            (local.set $i (i32.add (local.get $i) (i32.const 1)))
-            (local.set $begin (i32.add (local.get $begin) (i32.const 1)))
-
-            (br $next_byte))))
-
-        (call $print_linear (local.get $fd) (local.get $FP) (local.get $i))
-
-        (br $next_slice))))
+      (call $print_linear (local.get $fd) (local.get $FP) (local.get $i))
+      )
 
     (%leave))
 
