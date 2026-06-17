@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::errors::ParseErrors;
 
-pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Expr> {
+pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Func> {
     debug!(%filename, %src, "Parsing");
     let src = Arc::new(NamedSource::new(filename, src.to_owned()));
     Ok(
@@ -17,6 +17,44 @@ pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Expr> {
 #[rust_sitter::grammar("arithmetic")]
 pub mod grammar {
     #[rust_sitter::language]
+    #[derive(Debug, Eq, PartialEq)]
+    pub struct Func {
+        #[rust_sitter::leaf(text = "export")]
+        pub export: Option<()>,
+
+        #[rust_sitter::leaf(text = "func")]
+        func: (),
+
+        #[rust_sitter::leaf(pattern = r"\w+", transform = |v| v.to_string())]
+        pub name: String,
+
+        #[rust_sitter::leaf(text = "(")]
+        params_start: (),
+
+        #[rust_sitter::leaf(text = ")")]
+        params_end: (),
+
+        #[rust_sitter::leaf(text = "->")]
+        arrow: (),
+
+        #[rust_sitter::leaf(text = "(")]
+        results_start: (),
+
+        #[rust_sitter::leaf(text = "i32")]
+        ty: (),
+
+        #[rust_sitter::leaf(text = ")")]
+        results_end: (),
+
+        #[rust_sitter::leaf(text = "{")]
+        body_start: (),
+
+        pub expr: Expr,
+
+        #[rust_sitter::leaf(text = "}")]
+        body_end: (),
+    }
+
     #[derive(Debug, Eq, PartialEq)]
     pub enum Expr {
         Number(#[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32),
@@ -42,7 +80,9 @@ mod tests {
     #[test]
     fn successful_parses() {
         assert_eq!(
-            parse("<test>", "1 + 2 * 3").unwrap(),
+            parse("<test>", "func f() -> (i32) { 1 + 2 * 3 }")
+                .unwrap()
+                .expr,
             Expr::Add(
                 Box::new(Expr::Number(1)),
                 (),

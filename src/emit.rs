@@ -6,9 +6,9 @@ use wasm_encoder::{
     TypeSection, ValType,
 };
 
-use crate::parser::grammar::Expr;
+use crate::parser::grammar::{Expr, Func};
 
-pub fn emit(ast: &Expr) -> Result<Vec<u8>> {
+pub fn emit(ast: &Func) -> Result<Vec<u8>> {
     let mut types = TypeSection::new();
     types.ty().function(vec![], vec![ValType::I32]);
     let f_type_id = 0;
@@ -18,13 +18,13 @@ pub fn emit(ast: &Expr) -> Result<Vec<u8>> {
     let f_func_id = 0;
 
     let mut exports = ExportSection::new();
-    exports.export("f", ExportKind::Func, f_func_id);
+    exports.export(&ast.name, ExportKind::Func, f_func_id);
 
     let mut codes = CodeSection::new();
     let locals = vec![];
     let mut f = Function::new(locals);
     let mut sink = f.instructions();
-    emit_expr(&mut sink, ast)?;
+    emit_expr(&mut sink, &ast.expr)?;
     sink.end();
     codes.function(&f);
 
