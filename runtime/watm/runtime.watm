@@ -3,7 +3,7 @@
 ;; Our job here is to include all the other files, using the %INCLUDE
 ;; WAT macro.
 (module $toy_lisp_runtime.wasm
-  (%include "runtime/system.watm")
-  (%include "runtime/memory.watm")
-  (%include "runtime/types.watm")
-  (%include "runtime/start.watm"))
+  (%include "runtime/watm/system.watm")
+  (%include "runtime/watm/memory.watm")
+  (%include "runtime/watm/types.watm")
+  (%include "runtime/watm/start.watm"))

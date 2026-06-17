@@ -1,4 +1,7 @@
-use miette::{Result, miette};
+use std::{fs, path::PathBuf};
+
+use clap::Parser;
+use miette::{Context, IntoDiagnostic, Result, miette};
 use tracing::debug;
 use tracing_subscriber::{EnvFilter, fmt};
 use wasmtime::{Engine, Linker, Module, Store};
@@ -9,9 +12,21 @@ mod emit;
 mod errors;
 mod parser;
 
+#[derive(Debug, Parser)]
+enum Opt {
+    Run { path: PathBuf },
+}
+
 fn main() -> Result<()> {
     init_tracing();
-    let ast = parse("<input>", "1 ++ 2 * 3")?;
+
+    let Opt::Run { path } = Opt::parse();
+
+    let src = fs::read_to_string(&path)
+        .into_diagnostic()
+        .with_context(|| format!("Failed to read input file: {}", path.display()))?;
+
+    let ast = parse(&path.to_string_lossy(), &src)?;
     debug!(?ast, "Parsed");
     let wasm = emit(&ast)?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;

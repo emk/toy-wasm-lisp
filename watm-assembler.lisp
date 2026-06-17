@@ -171,8 +171,8 @@ so some rough edges are acceptable."
 
 (defun build-runtime ()
   "Build our toy Lisp runtime as WAT and WASM."
-  (let ((wat (assemble-wat-file "runtime/runtime.watm")))
-    (print-wat-file wat "runtime/runtime.wat")
+  (let ((wat (assemble-wat-file "runtime/watm/runtime.watm")))
+    (print-wat-file wat "runtime/watm/runtime.wat")
     ; (sb-ext:run-program
     ;   "wasm-tools"
     ;   '("parse" "runtime/runtime.wat" "-o" "runtime/runtime.wasm")
