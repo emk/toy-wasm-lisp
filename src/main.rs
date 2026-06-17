@@ -6,7 +6,7 @@ use tracing::debug;
 use tracing_subscriber::{EnvFilter, fmt};
 use wasmtime::{Engine, Linker, Module, Store};
 
-use crate::{emit::emit, parser::parse};
+use crate::{emit::emit_func, parser::parse};
 
 mod emit;
 mod errors;
@@ -20,7 +20,9 @@ enum Opt {
 fn main() -> Result<()> {
     init_tracing();
 
-    let Opt::Run { path } = Opt::parse();
+    let opt = Opt::parse();
+    debug!(?opt, "Options");
+    let Opt::Run { path } = opt;
 
     let src = fs::read_to_string(&path)
         .into_diagnostic()
@@ -28,7 +30,7 @@ fn main() -> Result<()> {
 
     let ast = parse(&path.to_string_lossy(), &src)?;
     debug!(?ast, "Parsed");
-    let wasm = emit(&ast)?;
+    let wasm = emit_func(&ast)?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;
     debug!(%wat, "Compiled");
 

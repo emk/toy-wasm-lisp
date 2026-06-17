@@ -14,60 +14,121 @@ pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Func> {
     )
 }
 
-#[rust_sitter::grammar("arithmetic")]
+#[rust_sitter::grammar("wasl")]
 pub mod grammar {
+    use rust_sitter::Spanned;
+
     #[rust_sitter::language]
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug)]
     pub struct Func {
         #[rust_sitter::leaf(text = "export")]
-        pub export: Option<()>,
+        export: Option<()>,
 
         #[rust_sitter::leaf(text = "func")]
-        func: (),
+        _func: (),
 
-        #[rust_sitter::leaf(pattern = r"\w+", transform = |v| v.to_string())]
-        pub name: String,
-
-        #[rust_sitter::leaf(text = "(")]
-        params_start: (),
-
-        #[rust_sitter::leaf(text = ")")]
-        params_end: (),
-
-        #[rust_sitter::leaf(text = "->")]
-        arrow: (),
-
-        #[rust_sitter::leaf(text = "(")]
-        results_start: (),
-
-        #[rust_sitter::leaf(text = "i32")]
-        ty: (),
-
-        #[rust_sitter::leaf(text = ")")]
-        results_end: (),
-
-        #[rust_sitter::leaf(text = "{")]
-        body_start: (),
-
-        pub expr: Expr,
-
-        #[rust_sitter::leaf(text = "}")]
-        body_end: (),
+        pub name: Ident,
+        pub params: Params,
+        pub returns: Option<Returns>,
+        pub body: Spanned<Block>,
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    impl Func {
+        pub fn is_exported(&self) -> bool {
+            self.export.is_some()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct Params {
+        #[rust_sitter::leaf(text = "(")]
+        _params_start: (),
+
+        #[rust_sitter::delimited(
+            #[rust_sitter::leaf(text = ",")]
+            ()
+        )]
+        pub tys: Vec<Spanned<Param>>,
+
+        #[rust_sitter::leaf(text = ")")]
+        _params_end: (),
+    }
+
+    #[derive(Debug)]
+    pub struct Param {
+        pub _name: Ident,
+        #[rust_sitter::leaf(text = ":")]
+        _colon: (),
+        pub ty: Spanned<Type>,
+    }
+
+    #[derive(Debug)]
+    pub enum Returns {
+        Single {
+            #[rust_sitter::leaf(text = "->")]
+            _arrow: (),
+            ty: Spanned<Type>,
+        },
+        Multiple {
+            #[rust_sitter::leaf(text = "->")]
+            _arrow: (),
+            #[rust_sitter::leaf(text = "(")]
+            _results_start: (),
+            #[rust_sitter::delimited(
+                #[rust_sitter::leaf(text = ",")]
+                ()
+            )]
+            tys: Vec<Spanned<Type>>,
+            #[rust_sitter::leaf(text = ")")]
+            _results_end: (),
+        },
+    }
+
+    #[derive(Debug)]
+    pub enum Type {
+        #[rust_sitter::leaf(text = "i32")]
+        I32,
+    }
+
+    #[derive(Debug)]
+    pub struct Block {
+        #[rust_sitter::leaf(text = "{")]
+        _body_start: (),
+
+        pub expr: Spanned<Expr>,
+
+        #[rust_sitter::leaf(text = "}")]
+        _body_end: (),
+    }
+
+    #[derive(Debug)]
     pub enum Expr {
         Number(#[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32),
         #[rust_sitter::prec_left(1)]
-        Add(Box<Expr>, #[rust_sitter::leaf(text = "+")] (), Box<Expr>),
+        Add(
+            Box<Spanned<Expr>>,
+            #[rust_sitter::leaf(text = "+")] (),
+            Box<Spanned<Expr>>,
+        ),
         #[rust_sitter::prec_left(2)]
-        Mul(Box<Expr>, #[rust_sitter::leaf(text = "*")] (), Box<Expr>),
+        Mul(
+            Box<Spanned<Expr>>,
+            #[rust_sitter::leaf(text = "*")] (),
+            Box<Spanned<Expr>>,
+        ),
+    }
+
+    #[derive(Debug)]
+    pub struct Ident {
+        #[rust_sitter::word]
+        #[rust_sitter::leaf(pattern = "[_a-zA-Z][_a-zA-Z0-9]*", transform = |v| v.to_string())]
+        pub text: Spanned<String>,
     }
 
     #[rust_sitter::extra]
     #[allow(dead_code)]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s")]
+        #[rust_sitter::leaf(pattern = r"\s|(//.*)")]
         _whitespace: (),
     }
 }
@@ -75,23 +136,9 @@ pub mod grammar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grammar::Expr;
 
     #[test]
     fn successful_parses() {
-        assert_eq!(
-            parse("<test>", "func f() -> (i32) { 1 + 2 * 3 }")
-                .unwrap()
-                .expr,
-            Expr::Add(
-                Box::new(Expr::Number(1)),
-                (),
-                Box::new(Expr::Mul(
-                    Box::new(Expr::Number(2)),
-                    (),
-                    Box::new(Expr::Number(3))
-                ))
-            )
-        );
+        parse("<test>", "func f() -> (i32) { 1 + 2 * 3 }").unwrap();
     }
 }

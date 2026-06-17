@@ -1,3 +1,10 @@
-export func f() -> (i32) {
+// import wasi_snapshot_preview1 {
+//     func fd_write(
+//         fd: i32, iovs_ptr: i32, iovs_len: i32, nwritten_out_ptr: i32
+//     ) -> i32;
+//     func proc_exit(exitcode: i32);
+// }
+
+export func f() -> i32 {
     1 + 2 * 3
 }
