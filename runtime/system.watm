@@ -43,9 +43,8 @@
       (i32.eq (local.get $nwritten) (i32.const 0))
       (if (then (call $proc_exit (i32.const 1))))
 
-      (local.set $buf (i32.add (local.get $buf) (local.get $nwritten)))
-      (local.set $buf_len (i32.sub (local.get $buf_len) (local.get $nwritten)))
-
+      (%local_inc $buf (local.get $nwritten))
+      (%local_dec $buf_len (local.get $nwritten))
       )
 
     (%leave))
@@ -53,7 +52,7 @@
   ;; Buffer size for $print_str.
   (global $print_str_slice_max i32 (i32.const 32))
 
-  ;; Print
+  ;; Print a GC string.
   (func $print_str
     (param $fd i32)
     (param $text (ref $str))
@@ -88,8 +87,8 @@
 
         ;; i += i
         ;; begin += 1
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (local.set $begin (i32.add (local.get $begin) (i32.const 1)))
+        (%local_inc $i)
+        (%local_inc $begin)
         )
 
       (call $print_linear (local.get $fd) (local.get $FP) (local.get $i))

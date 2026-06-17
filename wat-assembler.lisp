@@ -151,13 +151,23 @@ so some rough edges are acceptable."
          (LEN (list-length INTS)))
     #w`(array.new_fixed $str ,LEN ,@INTS)))
 
+(defun genlabel ()
+  "Like GENSYM, but for WAT labels."
+  (intern (concatenate 'string "$" (symbol-name (gensym)))))
+
 (define-wat-macro |%while| (COND &rest BODY)
-  (let ((LABEL (intern (concatenate 'string "$" (symbol-name (gensym))))))
+  (let ((LABEL (genlabel)))
     #w`(loop ,LABEL
          ,COND
          (if (then
            ,@BODY
            (br ,LABEL))))))
+
+(define-wat-macro |%local_inc| (LOCAL &optional (AMOUNT #w'(i32.const 1)))
+  #w`(local.set ,LOCAL (i32.add (local.get ,LOCAL) ,AMOUNT)))
+
+(define-wat-macro |%local_dec| (LOCAL &optional (AMOUNT #w'(i32.const 1)))
+  #w`(local.set ,LOCAL (i32.sub (local.get ,LOCAL) ,AMOUNT)))
 
 (defun build-runtime ()
   "Build our toy Lisp runtime as WAT and WASM."
