@@ -5,7 +5,7 @@ use wasm_encoder::{
     CodeSection, ExportKind, ExportSection, Function, FunctionSection, Module, TypeSection,
 };
 
-use crate::parser::grammar::Func;
+use crate::ast::grammar::Func;
 
 pub fn emit_func(func: &Func) -> Result<Vec<u8>> {
     // TODO: Split this up some.

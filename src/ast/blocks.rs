@@ -1,7 +1,7 @@
 use miette::Result;
 use wasm_encoder::InstructionSink;
 
-use crate::parser::grammar::Block;
+use super::grammar::Block;
 
 impl Block {
     pub fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {

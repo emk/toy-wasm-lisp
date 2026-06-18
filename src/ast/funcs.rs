@@ -1,7 +1,7 @@
 use miette::Result;
 use wasm_encoder::ValType;
 
-use crate::parser::grammar::{Func, Params, Returns};
+use super::grammar::{Func, Params, Returns};
 
 impl Func {
     pub fn is_exported(&self) -> bool {

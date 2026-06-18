@@ -6,12 +6,11 @@ use tracing::debug;
 use tracing_subscriber::{EnvFilter, fmt};
 use wasmtime::{Engine, Linker, Module, Store};
 
-use crate::{emit::emit_func, parser::parse};
+use crate::{ast::parse, emit::emit_func};
 
 mod ast;
 mod emit;
 mod errors;
-mod parser;
 
 #[derive(Debug, Parser)]
 enum Opt {
