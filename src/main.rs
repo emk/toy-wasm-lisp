@@ -10,6 +10,7 @@ use crate::{ast::parse, emit::emit_func};
 
 mod ast;
 mod emit;
+mod envs;
 mod errors;
 
 #[derive(Debug, Parser)]

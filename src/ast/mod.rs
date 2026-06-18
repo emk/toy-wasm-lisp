@@ -123,7 +123,7 @@ pub mod grammar {
         ),
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct Ident {
         #[rust_sitter::word]
         #[rust_sitter::leaf(pattern = "[_a-zA-Z][_a-zA-Z0-9]*", transform = |v| v.to_string())]
