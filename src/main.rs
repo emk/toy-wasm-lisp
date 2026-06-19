@@ -6,10 +6,9 @@ use tracing::debug;
 use tracing_subscriber::{EnvFilter, fmt};
 use wasmtime::{Engine, Linker, Module, Store};
 
-use crate::{ast::parse, emit::emit_func};
+use crate::ast::parse;
 
 mod ast;
-mod emit;
 mod envs;
 mod errors;
 
@@ -29,9 +28,9 @@ fn main() -> Result<()> {
         .into_diagnostic()
         .with_context(|| format!("Failed to read input file: {}", path.display()))?;
 
-    let ast = parse(&path.to_string_lossy(), &src)?;
-    debug!(?ast, "Parsed");
-    let wasm = emit_func(&ast)?;
+    let mod_ast = parse(&path.to_string_lossy(), &src)?;
+    debug!(?mod_ast, "Parsed");
+    let wasm = mod_ast.emit()?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;
     debug!(%wat, "Compiled");
 

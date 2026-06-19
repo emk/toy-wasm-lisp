@@ -11,10 +11,14 @@ use std::{
     rc::Rc,
 };
 
-use miette::Result;
+use miette::{Result, miette};
+use wasm_encoder::{
+    CodeSection, ExportKind, ExportSection, FuncType, Function, FunctionSection, Module,
+    TypeSection,
+};
 
 use crate::{
-    ast::grammar::Ident,
+    ast::grammar::{Func, Ident},
     errors::{DuplicateDeclarationError, UnknownIdentifierError},
 };
 
@@ -30,6 +34,11 @@ impl<T> DeclIdx<T> {
             idx,
             _phantom: PhantomData,
         }
+    }
+
+    // Convert to a `u32`, failing if it does not fit.
+    pub fn as_u32(&self) -> Result<u32> {
+        u32::try_from(self.idx).map_err(|_| miette!("index overflow: {}", self.idx))
     }
 }
 
@@ -110,7 +119,7 @@ pub struct IdentMap<'parent, T> {
 }
 
 impl<T> IdentMap<'static, T> {
-    /// Create a new [`NameEnv`].
+    /// Create a new [`IdentMap`].
     pub fn new() -> Self {
         Self {
             decl_table: DeclTableHandle::new(),
@@ -121,7 +130,7 @@ impl<T> IdentMap<'static, T> {
 }
 
 impl<'parent, T> IdentMap<'parent, T> {
-    /// Create a child [`NameEnv`] which shares the same [`DeclTableHandle`].
+    /// Create a child [`IdentMap`] which shares the same [`DeclTableHandle`].
     /// This is needed because WASM frequently requires declaring all locals (or whatever)
     /// at the top of a function, sharing a single set of indices.
     pub fn child<'new_parent: 'parent>(&'new_parent self) -> IdentMap<'new_parent, T> {
@@ -138,7 +147,11 @@ impl<'parent, T> IdentMap<'parent, T> {
     }
 
     /// Insert `ident`, returning an error if it already exists.
-    pub fn insert(&mut self, ident: Ident, value: T) -> Result<(), DuplicateDeclarationError> {
+    pub fn insert(
+        &mut self,
+        ident: Ident,
+        value: T,
+    ) -> Result<DeclIdx<T>, DuplicateDeclarationError> {
         if let Some((original_ident, _v)) = self.idents.get_key_value(&ident) {
             return Err(DuplicateDeclarationError::new(
                 ident,
@@ -147,7 +160,7 @@ impl<'parent, T> IdentMap<'parent, T> {
         }
         let id = self.decl_table.insert(value);
         self.idents.insert(ident, id);
-        Ok(())
+        Ok(id)
     }
 
     /// Look up `ident`, returning `None` if it does not exist.
@@ -176,8 +189,130 @@ impl<'parent, T> IdentMap<'parent, T> {
     }
 }
 
+/// Type used in a `(type ...)` declaration.
+//
+/// Currently limited to function types, though eventually we will need to
+/// create a custom `enum` for all the types supported by
+/// [`wasm_encoder::CoreTypeEncoder`].
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+pub enum IndexedType {
+    Func(FuncType),
+}
+
+/// Keeps track of known types for `(type ...)` declarations.
+#[derive(Debug, Default)]
+pub struct TypeIndexer {
+    next_type_idx: usize,
+    type_map: HashMap<IndexedType, DeclIdx<IndexedType>>,
+}
+
+impl TypeIndexer {
+    /// Creates a new [`TypeIndexer`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Helper function to get the next ID in our sequence.
+    fn next_id(&mut self) -> DeclIdx<IndexedType> {
+        let idx = DeclIdx::new(self.next_type_idx);
+        self.next_type_idx += 1;
+        idx
+    }
+
+    /// Insert (or lookup) a type, returning a boolean indicating whether the type was inserted,
+    /// and the index.
+    pub fn find_or_insert(&mut self, ty: IndexedType) -> (bool, DeclIdx<IndexedType>) {
+        if let Some(idx) = self.type_map.get(&ty) {
+            (false, *idx)
+        } else {
+            let idx = self.next_id();
+            self.type_map.insert(ty, idx);
+            (true, idx)
+        }
+    }
+}
+
+/// Module-level environment.
+///
+/// This includes both [`wasm_encoder`] "section" types, and our own
+/// machinery for keeping track of names and generating indices.
+pub struct ModuleEnv {
+    types_sec: TypeSection,
+    funcs_sec: FunctionSection,
+    exports_sec: ExportSection,
+    codes_sec: CodeSection,
+
+    type_indexer: TypeIndexer,
+    func_map: IdentMap<'static, Func>,
+}
+
+impl ModuleEnv {
+    /// Create a new [`ModuleEnv`] with default values.
+    pub fn new() -> Self {
+        Self {
+            types_sec: TypeSection::new(),
+            funcs_sec: FunctionSection::new(),
+            exports_sec: ExportSection::new(),
+            codes_sec: CodeSection::new(),
+            type_indexer: TypeIndexer::new(),
+            func_map: IdentMap::new(),
+        }
+    }
+
+    /// Insert a type.
+    pub fn find_or_insert_type(&mut self, ty: IndexedType) -> DeclIdx<IndexedType> {
+        let (is_new, idx) = self.type_indexer.find_or_insert(ty.clone());
+        if is_new {
+            match ty {
+                IndexedType::Func(func_type) => {
+                    self.types_sec.ty().func_type(&func_type);
+                }
+            }
+        }
+        idx
+    }
+
+    /// Insert a function declaration.
+    pub fn insert_function(&mut self, name: Ident, func: Func) -> Result<()> {
+        let type_idx = self.find_or_insert_type(IndexedType::Func(func.func_type()?));
+        self.funcs_sec.function(type_idx.as_u32()?);
+        let func_idx = self.func_map.insert(name.clone(), func.clone())?;
+        if func.is_exported() {
+            self.export(&name, ExportKind::Func, func_idx)?;
+        }
+        Ok(())
+    }
+
+    /// Insert a function implementation. This must be called in the same order as
+    /// [`Self::insert_function`].
+    ///
+    /// TODO: Add some enforcement to make sure we get called the right number of times in
+    /// the right order.
+    pub fn insert_code(&mut self, code: &Function) {
+        self.codes_sec.function(code);
+    }
+
+    /// Internal helper for exporting. Make sure `kind` and `T` match!
+    fn export<T>(&mut self, name: &Ident, kind: ExportKind, idx: DeclIdx<T>) -> Result<()> {
+        self.exports_sec.export(&name.text, kind, idx.as_u32()?);
+        Ok(())
+    }
+
+    /// Build a WASM module.
+    pub fn build_module(&self) -> Module {
+        let mut module = Module::new();
+        module.section(&self.types_sec);
+        module.section(&self.funcs_sec);
+        module.section(&self.exports_sec);
+        module.section(&self.codes_sec);
+        module
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use wasm_encoder::ValType;
+
     use super::*;
 
     fn ident(name: &str) -> Ident {
@@ -185,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_and_get() {
+    fn ident_map_insert_and_get() {
         let mut map = IdentMap::new();
 
         // Insert and get.
@@ -220,5 +355,28 @@ mod tests {
         assert_eq!(collected_decls[0], 1);
         assert_eq!(collected_decls[1], 2);
         assert_eq!(collected_decls[2], 3);
+    }
+
+    #[test]
+    fn type_index_insert() {
+        let mut type_index = TypeIndexer::new();
+        let add_type = FuncType::new(vec![ValType::I32, ValType::I32], vec![ValType::I32]);
+        let abs_type = FuncType::new(vec![ValType::I32], vec![ValType::I32]);
+
+        // Different types get different IDs.
+        assert_eq!(
+            type_index.find_or_insert(IndexedType::Func(add_type.clone())),
+            (true, DeclIdx::new(0))
+        );
+        assert_eq!(
+            type_index.find_or_insert(IndexedType::Func(abs_type.clone())),
+            (true, DeclIdx::new(1))
+        );
+
+        // Multiple insertions return the same ID.
+        assert_eq!(
+            type_index.find_or_insert(IndexedType::Func(add_type)),
+            (false, DeclIdx::new(0))
+        );
     }
 }

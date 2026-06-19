@@ -14,9 +14,10 @@ mod blocks;
 mod exprs;
 mod funcs;
 mod idents;
+mod mods;
 mod types;
 
-pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Func> {
+pub fn parse(filename: &str, src: &str) -> Result<self::grammar::Mod> {
     debug!(%filename, %src, "Parsing");
     let src = Arc::new(NamedSource::new(filename, src.to_owned()));
     Ok(
@@ -31,6 +32,11 @@ pub mod grammar {
 
     #[rust_sitter::language]
     #[derive(Debug)]
+    pub struct Mod {
+        pub(super) func: Func,
+    }
+
+    #[derive(Clone, Debug)]
     pub struct Func {
         #[rust_sitter::leaf(text = "export")]
         pub(super) export: Option<()>,
@@ -44,7 +50,7 @@ pub mod grammar {
         pub body: Spanned<Block>,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct Params {
         #[rust_sitter::leaf(text = "(")]
         _params_start: (),
@@ -59,7 +65,7 @@ pub mod grammar {
         _params_end: (),
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct Param {
         _name: Ident,
         #[rust_sitter::leaf(text = ":")]
@@ -67,7 +73,7 @@ pub mod grammar {
         pub(super) ty: Spanned<Type>,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub enum Returns {
         Single {
             #[rust_sitter::leaf(text = "->")]
@@ -89,13 +95,13 @@ pub mod grammar {
         },
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Copy, Debug)]
     pub enum Type {
         #[rust_sitter::leaf(text = "i32")]
         I32,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub struct Block {
         #[rust_sitter::leaf(text = "{")]
         _body_start: (),
@@ -106,7 +112,7 @@ pub mod grammar {
         _body_end: (),
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     pub enum Expr {
         Number(#[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32),
         #[rust_sitter::prec_left(1)]
