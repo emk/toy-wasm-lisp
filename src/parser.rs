@@ -36,8 +36,8 @@ pub mod grammar {
         _func: (),
 
         pub name: Ident,
-        pub params: Params,
-        pub returns: Option<Returns>,
+        pub params: Spanned<Params>,
+        pub returns: Spanned<Option<Returns>>,
         pub body: Spanned<Block>,
     }
 
@@ -58,7 +58,7 @@ pub mod grammar {
 
     #[derive(Clone, Debug)]
     pub struct Param {
-        pub _name: Ident,
+        pub name: Ident,
         #[rust_sitter::leaf(text = ":")]
         _colon: (),
         pub ty: Spanned<Type>,

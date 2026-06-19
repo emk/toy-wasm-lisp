@@ -1,14 +1,35 @@
-use miette::Result;
+use std::sync::Arc;
+
+use miette::{NamedSource, Result};
+use rust_sitter::Spanned;
 use wasm_encoder::ValType;
 
-// TODO: This type is still shared with the parser. We may
-// make it a standalone type at some point.
-use crate::parser::grammar::Type;
+use crate::{locs::Loc, parser::grammar};
+
+#[derive(Clone, Debug)]
+pub struct Type {
+    #[expect(dead_code)]
+    loc: Loc,
+    variant: TypeVariant,
+}
+
+#[derive(Clone, Debug)]
+pub enum TypeVariant {
+    I32,
+}
 
 impl Type {
+    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: &Spanned<grammar::Type>) -> Self {
+        let loc = Loc::new(src, ty);
+        let variant = match &ty.value {
+            grammar::Type::I32 => TypeVariant::I32,
+        };
+        Type { loc, variant }
+    }
+
     pub fn val_type(&self) -> Result<ValType> {
-        match &self {
-            Type::I32 => Ok(ValType::I32),
+        match &self.variant {
+            TypeVariant::I32 => Ok(ValType::I32),
         }
     }
 }

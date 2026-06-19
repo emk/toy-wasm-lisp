@@ -4,7 +4,7 @@ use miette::{NamedSource, Result};
 use rust_sitter::Spanned;
 use wasm_encoder::{FuncType, Function, ValType};
 
-use super::{Block, Ident};
+use super::{Block, Ident, Type};
 use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
 
 #[derive(Clone, Debug)]
@@ -25,8 +25,8 @@ impl Func {
             loc,
             should_export: block.export.is_some(),
             name: Ident::from_grammar(src.clone(), &block.name),
-            params: Params::from_grammar(&block.params),
-            returns: Returns::from_grammar(&block.returns),
+            params: Params::from_grammar(src.clone(), &block.params),
+            returns: Returns::from_grammar(src.clone(), &block.returns),
             body: Block::from_grammar(src, &block.body),
         }
     }
@@ -56,43 +56,80 @@ impl Func {
 
 #[derive(Clone, Debug)]
 pub struct Params {
-    params: Vec<Spanned<grammar::Param>>,
+    #[expect(dead_code)]
+    loc: Loc,
+    params: Vec<Param>,
 }
 
 impl Params {
-    pub fn from_grammar(params: &grammar::Params) -> Self {
+    pub fn from_grammar(src: Arc<NamedSource<String>>, params: &Spanned<grammar::Params>) -> Self {
+        let loc = Loc::new(src.clone(), params);
         Self {
-            params: params.params.clone(),
+            loc,
+            params: params
+                .params
+                .iter()
+                .map(|p| Param::from_grammar(src.clone(), p))
+                .collect::<Vec<_>>(),
         }
     }
 
     fn types(&self) -> Result<Vec<ValType>> {
         self.params
             .iter()
-            .map(|p| p.ty.value.val_type())
+            .map(|p| p.ty.val_type())
             .collect::<Result<Vec<_>>>()
     }
 }
 
 #[derive(Clone, Debug)]
+pub struct Param {
+    #[expect(dead_code)]
+    loc: Loc,
+    #[expect(dead_code)]
+    name: Ident,
+    ty: Type,
+}
+
+impl Param {
+    fn from_grammar(src: Arc<NamedSource<String>>, param: &Spanned<grammar::Param>) -> Self {
+        let loc = Loc::new(src.clone(), param);
+        Self {
+            loc,
+            name: Ident::from_grammar(src.clone(), &param.name),
+            ty: Type::from_grammar(src.clone(), &param.ty),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Returns {
-    tys: Vec<Spanned<grammar::Type>>,
+    #[expect(dead_code)]
+    loc: Loc,
+    tys: Vec<Type>,
 }
 
 impl Returns {
-    pub fn from_grammar(returns: &Option<grammar::Returns>) -> Self {
-        let tys = match returns {
+    pub fn from_grammar(
+        src: Arc<NamedSource<String>>,
+        returns: &Spanned<Option<grammar::Returns>>,
+    ) -> Self {
+        let loc = Loc::new(src.clone(), returns);
+        let tys = match &returns.value {
             None => vec![],
-            Some(grammar::Returns::Single { ty, .. }) => vec![ty.clone()],
-            Some(grammar::Returns::Multiple { tys, .. }) => tys.clone(),
+            Some(grammar::Returns::Single { ty, .. }) => vec![Type::from_grammar(src, ty)],
+            Some(grammar::Returns::Multiple { tys, .. }) => tys
+                .iter()
+                .map(|ty| Type::from_grammar(src.clone(), ty))
+                .collect::<Vec<_>>(),
         };
-        Self { tys }
+        Self { loc, tys }
     }
 
     fn types(&self) -> Result<Vec<ValType>> {
         self.tys
             .iter()
-            .map(|ty| ty.value.val_type())
+            .map(|ty| ty.val_type())
             .collect::<Result<Vec<_>>>()
     }
 }
