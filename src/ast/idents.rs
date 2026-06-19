@@ -3,7 +3,9 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::grammar::Ident;
+// TODO: This type is still shared with the parser. We may
+// make it a standalone type at some point.
+use crate::parser::grammar::Ident;
 
 impl Ident {
     #[cfg(test)]

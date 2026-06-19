@@ -7,7 +7,7 @@ use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
 
 use tracing::debug;
 
-use crate::ast::grammar::Ident;
+use crate::parser::grammar::Ident;
 
 /// A [`rust_sitter`]-derived parse error.
 #[derive(thiserror::Error, Debug, Diagnostic)]

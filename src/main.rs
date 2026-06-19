@@ -2,15 +2,17 @@ use std::{fs, path::PathBuf};
 
 use clap::Parser;
 use miette::{Context, IntoDiagnostic, Result, miette};
-use tracing::debug;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing::{debug, trace};
+use tracing_subscriber::{EnvFilter, field::MakeExt as _, fmt};
 use wasmtime::{Engine, Linker, Module, Store};
 
-use crate::ast::parse;
+use crate::parser::parse;
 
 mod ast;
 mod envs;
 mod errors;
+mod locs;
+mod parser;
 
 #[derive(Debug, Parser)]
 enum Opt {
@@ -28,9 +30,9 @@ fn main() -> Result<()> {
         .into_diagnostic()
         .with_context(|| format!("Failed to read input file: {}", path.display()))?;
 
-    let mod_ast = parse(&path.to_string_lossy(), &src)?;
-    debug!(?mod_ast, "Parsed");
-    let wasm = mod_ast.emit()?;
+    let parsed = parse(&path.to_string_lossy(), &src)?;
+    trace!(?parsed, "Parsed");
+    let wasm = parsed.emit()?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;
     debug!(%wat, "Compiled");
 
@@ -59,5 +61,6 @@ fn init_tracing() {
     fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
+        .map_fmt_fields(|f| f.debug_alt())
         .init();
 }

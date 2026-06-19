@@ -18,8 +18,9 @@ use wasm_encoder::{
 };
 
 use crate::{
-    ast::grammar::{Func, Ident},
+    ast::Func,
     errors::{DuplicateDeclarationError, UnknownIdentifierError},
+    parser::grammar::Ident,
 };
 
 pub struct DeclIdx<T> {
@@ -166,7 +167,7 @@ impl<'parent, T> IdentMap<'parent, T> {
             Some((
                 *index,
                 self.decl_table
-                    .get(index.clone())
+                    .get(index.to_owned())
                     .expect("environment missing idx"),
             ))
         } else if let Some(parent) = self.parent {
@@ -281,7 +282,7 @@ impl ModuleEnv {
         let type_idx = self.find_or_insert_type(IndexedType::Func(func.func_type()?));
         self.funcs_sec.function(type_idx.try_as_u32()?);
         let func_idx = self.func_map.insert(name.clone(), func.clone())?;
-        if func.is_exported() {
+        if func.should_export() {
             self.export(&name, ExportKind::Func, func_idx)?;
         }
         Ok(())

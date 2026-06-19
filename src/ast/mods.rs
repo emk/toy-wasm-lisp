@@ -1,12 +1,28 @@
 //! Implementations for [`Module`].
 
-use miette::Result;
+use std::sync::Arc;
 
-use crate::envs::ModuleEnv;
+use miette::{NamedSource, Result};
 
-use super::grammar::Mod;
+use super::Func;
+use crate::{envs::ModuleEnv, parser::grammar};
+
+#[derive(Clone, Debug)]
+pub struct Mod {
+    funcs: Vec<Func>,
+}
 
 impl Mod {
+    pub fn from_grammar(src: Arc<NamedSource<String>>, grammar: &grammar::Mod) -> Self {
+        Self {
+            funcs: grammar
+                .funcs
+                .iter()
+                .map(|f| Func::from_grammar(src.clone(), f))
+                .collect(),
+        }
+    }
+
     pub fn emit(&self) -> Result<Vec<u8>> {
         // Create our module-level environment, which contains
         // all the state needed to emit code.
