@@ -44,10 +44,7 @@ impl<T> DeclIdx<T> {
 
 impl<T> Clone for DeclIdx<T> {
     fn clone(&self) -> Self {
-        Self {
-            idx: self.idx,
-            _phantom: self._phantom,
-        }
+        *self
     }
 }
 
