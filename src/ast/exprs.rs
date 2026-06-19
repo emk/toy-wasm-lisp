@@ -4,6 +4,7 @@ use miette::{NamedSource, Result, miette};
 use rust_sitter::Spanned;
 use wasm_encoder::InstructionSink;
 
+use super::Ident;
 use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
 
 #[derive(Clone, Debug)]
@@ -16,18 +17,9 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprVariant {
     Number(i32),
-    Add {
-        expr1: Box<Expr>,
-        expr2: Box<Expr>,
-    },
-    Mul {
-        expr1: Box<Expr>,
-        expr2: Box<Expr>,
-    },
-    Call {
-        func_name: grammar::Ident,
-        args: Vec<Expr>,
-    },
+    Add { expr1: Box<Expr>, expr2: Box<Expr> },
+    Mul { expr1: Box<Expr>, expr2: Box<Expr> },
+    Call { func_name: Ident, args: Vec<Expr> },
 }
 
 impl Expr {
@@ -46,7 +38,7 @@ impl Expr {
             grammar::Expr::Call {
                 func_name, args, ..
             } => ExprVariant::Call {
-                func_name: func_name.clone(),
+                func_name: Ident::from_grammar(src.clone(), func_name),
                 args: args
                     .iter()
                     .map(|arg| Expr::from_grammar(src.clone(), arg))

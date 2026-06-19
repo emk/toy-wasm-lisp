@@ -4,7 +4,7 @@ use miette::{NamedSource, Result};
 use rust_sitter::Spanned;
 use wasm_encoder::{FuncType, Function, ValType};
 
-use super::Block;
+use super::{Block, Ident};
 use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
 
 #[derive(Clone, Debug)]
@@ -12,7 +12,7 @@ pub struct Func {
     #[expect(dead_code)]
     loc: Loc,
     should_export: bool,
-    name: grammar::Ident,
+    name: Ident,
     params: Params,
     returns: Returns,
     body: Block,
@@ -24,7 +24,7 @@ impl Func {
         Self {
             loc,
             should_export: block.export.is_some(),
-            name: block.name.clone(),
+            name: Ident::from_grammar(src.clone(), &block.name),
             params: Params::from_grammar(&block.params),
             returns: Returns::from_grammar(&block.returns),
             body: Block::from_grammar(src, &block.body),

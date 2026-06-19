@@ -3,7 +3,7 @@
 //! Note that the actual node _types_ are declared in [`crate::parser::grammar`]
 //! grammar, but the actual
 
-pub use self::{blocks::Block, exprs::Expr, funcs::Func, mods::Mod};
+pub use self::{blocks::Block, exprs::Expr, funcs::Func, idents::Ident, mods::Mod};
 
 mod blocks;
 mod exprs;

@@ -7,7 +7,7 @@ use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
 
 use tracing::debug;
 
-use crate::parser::grammar::Ident;
+use crate::ast::Ident;
 
 /// A [`rust_sitter`]-derived parse error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
@@ -94,7 +94,7 @@ pub struct UnknownIdentifierError {
 
 impl UnknownIdentifierError {
     pub fn new(ident: Ident) -> Self {
-        let span = SourceSpan::from(ident.text.span);
+        let span = SourceSpan::from(ident.loc.span.clone());
         Self { ident, span }
     }
 }
@@ -114,8 +114,8 @@ pub struct DuplicateDeclarationError {
 
 impl DuplicateDeclarationError {
     pub fn new(duplicate_ident: Ident, original_ident: Ident) -> Self {
-        let original_span = SourceSpan::from(original_ident.text.span);
-        let duplicate_span = SourceSpan::from(duplicate_ident.text.span);
+        let original_span = SourceSpan::from(original_ident.loc.span.clone());
+        let duplicate_span = SourceSpan::from(duplicate_ident.loc.span.clone());
         Self {
             ident: duplicate_ident,
             original_span,

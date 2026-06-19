@@ -29,6 +29,16 @@ impl Loc {
             span: spanned.span.0..spanned.span.1,
         }
     }
+
+    /// Create a [`Loc`] for use in tests, with an empty span pointing
+    /// at an empty source file.
+    #[cfg(test)]
+    pub fn new_for_test() -> Loc {
+        Loc {
+            src: Arc::new(NamedSource::new("<test>", "".to_string())),
+            span: 0..0,
+        }
+    }
 }
 
 impl fmt::Debug for Loc {

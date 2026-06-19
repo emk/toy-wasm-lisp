@@ -18,9 +18,8 @@ use wasm_encoder::{
 };
 
 use crate::{
-    ast::Func,
+    ast::{Func, Ident},
     errors::{DuplicateDeclarationError, UnknownIdentifierError},
-    parser::grammar::Ident,
 };
 
 pub struct DeclIdx<T> {
@@ -299,7 +298,8 @@ impl ModuleEnv {
 
     /// Internal helper for exporting. Make sure `kind` and `T` match!
     fn export<T>(&mut self, name: &Ident, kind: ExportKind, idx: DeclIdx<T>) -> Result<()> {
-        self.exports_sec.export(&name.text, kind, idx.try_as_u32()?);
+        self.exports_sec
+            .export(name.as_str(), kind, idx.try_as_u32()?);
         Ok(())
     }
 
