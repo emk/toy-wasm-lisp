@@ -14,9 +14,12 @@ impl Mod {
 
         // Eventually we will need to emit all function decls first,
         // then all impls.
-        self.func.emit_decl(&mut module_env)?;
-        self.func.emit_impl(&mut module_env)?;
-
+        for f in &self.funcs {
+            f.emit_decl(&mut module_env)?;
+        }
+        for f in &self.funcs {
+            f.emit_impl(&mut module_env)?;
+        }
         let module = module_env.build_module();
         Ok(module.finish())
     }

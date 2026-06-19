@@ -5,6 +5,10 @@
 //     func proc_exit(exitcode: i32);
 // }
 
+func other() -> i32 {
+    5
+}
+
 export func f() -> i32 {
-    1 + 2 * 3
+    1 + 2 * 3 + other()
 }

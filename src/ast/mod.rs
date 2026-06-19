@@ -33,7 +33,7 @@ pub mod grammar {
     #[rust_sitter::language]
     #[derive(Debug)]
     pub struct Mod {
-        pub(super) func: Func,
+        pub(super) funcs: Vec<Func>,
     }
 
     #[derive(Clone, Debug)]
@@ -127,6 +127,19 @@ pub mod grammar {
             #[rust_sitter::leaf(text = "*")] (),
             Box<Spanned<Expr>>,
         ),
+        #[rust_sitter::prec(3)]
+        Call {
+            func_name: Ident,
+            #[rust_sitter::leaf(text = "(")]
+            _args_start: (),
+            #[rust_sitter::delimited(
+                #[rust_sitter::leaf(text = ",")]
+                ()
+            )]
+            args: Vec<Spanned<Expr>>,
+            #[rust_sitter::leaf(text = ")")]
+            _args_end: (),
+        },
     }
 
     #[derive(Clone, Debug)]

@@ -10,11 +10,11 @@ impl Func {
         self.export.is_some()
     }
 
-    pub fn param_types(&self) -> Result<Vec<ValType>> {
+    fn param_types(&self) -> Result<Vec<ValType>> {
         self.params.types()
     }
 
-    pub fn return_types(&self) -> Result<Vec<ValType>> {
+    fn return_types(&self) -> Result<Vec<ValType>> {
         match &self.returns {
             None => Ok(vec![]),
             Some(returns) => returns.types(),
@@ -33,7 +33,7 @@ impl Func {
         let locals = vec![];
         let mut f = Function::new(locals);
         let mut sink = f.instructions();
-        self.body.emit(&mut sink)?;
+        self.body.emit(mod_env, &mut sink)?;
         sink.end();
         mod_env.insert_code(&f);
         Ok(())

@@ -37,7 +37,7 @@ impl<T> DeclIdx<T> {
     }
 
     // Convert to a `u32`, failing if it does not fit.
-    pub fn as_u32(&self) -> Result<u32> {
+    pub fn try_as_u32(&self) -> Result<u32> {
         u32::try_from(self.idx).map_err(|_| miette!("index overflow: {}", self.idx))
     }
 }
@@ -259,6 +259,13 @@ impl ModuleEnv {
         }
     }
 
+    /// Get our function map, for looking up callsites.
+    ///
+    /// TODO: Merge into a more complete env mechanism.
+    pub fn func_map(&self) -> &IdentMap<'static, Func> {
+        &self.func_map
+    }
+
     /// Insert a type.
     pub fn find_or_insert_type(&mut self, ty: IndexedType) -> DeclIdx<IndexedType> {
         let (is_new, idx) = self.type_indexer.find_or_insert(ty.clone());
@@ -275,7 +282,7 @@ impl ModuleEnv {
     /// Insert a function declaration.
     pub fn insert_function(&mut self, name: Ident, func: Func) -> Result<()> {
         let type_idx = self.find_or_insert_type(IndexedType::Func(func.func_type()?));
-        self.funcs_sec.function(type_idx.as_u32()?);
+        self.funcs_sec.function(type_idx.try_as_u32()?);
         let func_idx = self.func_map.insert(name.clone(), func.clone())?;
         if func.is_exported() {
             self.export(&name, ExportKind::Func, func_idx)?;
@@ -294,7 +301,7 @@ impl ModuleEnv {
 
     /// Internal helper for exporting. Make sure `kind` and `T` match!
     fn export<T>(&mut self, name: &Ident, kind: ExportKind, idx: DeclIdx<T>) -> Result<()> {
-        self.exports_sec.export(&name.text, kind, idx.as_u32()?);
+        self.exports_sec.export(&name.text, kind, idx.try_as_u32()?);
         Ok(())
     }
 
