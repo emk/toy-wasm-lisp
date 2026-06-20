@@ -27,6 +27,14 @@ impl Type {
         Type { loc, variant }
     }
 
+    #[cfg(test)]
+    pub fn new_i32_for_test() -> Self {
+        Self {
+            loc: Loc::new_for_test(),
+            variant: TypeVariant::I32,
+        }
+    }
+
     pub fn val_type(&self) -> Result<ValType> {
         match &self.variant {
             TypeVariant::I32 => Ok(ValType::I32),
