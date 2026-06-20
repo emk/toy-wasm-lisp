@@ -16,10 +16,4 @@ impl<T> DeclTable<T> {
         self.decls.push(value);
         DeclIdx::new(index)
     }
-
-    /// Borrow our underlying storage (for iteration, etc).
-    #[cfg(test)]
-    pub fn decls(&self) -> &[T] {
-        &self.decls
-    }
 }

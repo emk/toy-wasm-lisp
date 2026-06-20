@@ -7,7 +7,7 @@ use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
 
 use tracing::debug;
 
-use crate::ast::Ident;
+use crate::{ast::Ident, envs::SymbolCategory};
 
 /// A [`rust_sitter`]-derived parse error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
@@ -82,44 +82,95 @@ fn collect_errs(sitter_errs: &[RustSitterParseError], out_errs: &mut Vec<ParseEr
     }
 }
 
-/// An unknown identifier error.
+/// A [`SymbolTable`]-related error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
-#[error("unknown identifier: {ident}")]
-pub struct UnknownIdentifierError {
-    ident: Ident,
+pub enum SymbolTableError {
+    #[error("unknown identifier: {ident}")]
+    UnknownIdentifier {
+        ident: Ident,
 
-    #[label("unknown identifier")]
-    span: SourceSpan,
+        /// Source file containing the error.
+        #[source_code]
+        src: Arc<NamedSource<String>>,
+
+        /// Location of the error.
+        #[label("unknown identifier")]
+        span: SourceSpan,
+    },
+
+    #[error("duplicate declaration: {ident}")]
+    DuplicateDeclaration {
+        ident: Ident,
+
+        /// Source file containing the error.
+        #[source_code]
+        src: Arc<NamedSource<String>>,
+
+        /// The new declaration that conflicts with the original.
+        #[label(primary, "duplicate declaration")]
+        span: SourceSpan,
+
+        /// The original declaration we conflict with.
+        ///
+        /// Because [`miette`] only supports one source code per error (at least
+        /// without shenanigans), we will set this to `None` if it occurs in a
+        /// different file than `Self::duplicate_span`.
+        #[label("original declaration")]
+        original_span: Option<SourceSpan>,
+    },
+
+    #[error("expected {ident} to be {expected_category}, but it was {found_category}")]
+    WrongSymbolCategory {
+        ident: Ident,
+        expected_category: SymbolCategory,
+        found_category: SymbolCategory,
+
+        /// Source file containing the error.
+        #[source_code]
+        src: Arc<NamedSource<String>>,
+
+        /// The symbol that doesn't match.
+        #[label(primary, "expected {expected_category}")]
+        span: SourceSpan,
+    },
 }
 
-impl UnknownIdentifierError {
-    pub fn new(ident: Ident) -> Self {
-        let span = SourceSpan::from(ident.loc.span.clone());
-        Self { ident, span }
+impl SymbolTableError {
+    pub fn unknown_identifier(ident: Ident) -> Self {
+        let src = ident.src();
+        let span = ident.src_span();
+        Self::UnknownIdentifier { ident, src, span }
     }
-}
 
-/// A duplicate declaration error.
-#[derive(thiserror::Error, Debug, Diagnostic)]
-#[error("duplicate declaration: {ident}")]
-pub struct DuplicateDeclarationError {
-    ident: Ident,
-
-    #[label("original declaration")]
-    original_span: SourceSpan,
-
-    #[label(primary, "duplicate declaration")]
-    duplicate_span: SourceSpan,
-}
-
-impl DuplicateDeclarationError {
-    pub fn new(duplicate_ident: Ident, original_ident: Ident) -> Self {
-        let original_span = SourceSpan::from(original_ident.loc.span.clone());
-        let duplicate_span = SourceSpan::from(duplicate_ident.loc.span.clone());
-        Self {
-            ident: duplicate_ident,
+    pub fn duplicate_declaration(ident: Ident, original: Ident) -> Self {
+        let src = ident.src();
+        let span = ident.src_span();
+        let original_span = if Arc::ptr_eq(&src, &original.src()) {
+            Some(original.src_span())
+        } else {
+            None
+        };
+        Self::DuplicateDeclaration {
+            ident,
+            src,
+            span,
             original_span,
-            duplicate_span,
+        }
+    }
+
+    pub fn wrong_symbol_category(
+        ident: Ident,
+        expected_category: SymbolCategory,
+        found_category: SymbolCategory,
+    ) -> Self {
+        let src = ident.src();
+        let span = ident.src_span();
+        Self::WrongSymbolCategory {
+            ident,
+            expected_category,
+            found_category,
+            src,
+            span,
         }
     }
 }

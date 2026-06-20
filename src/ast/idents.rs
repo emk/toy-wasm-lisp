@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use miette::NamedSource;
+use miette::{NamedSource, SourceSpan};
 
 use crate::{locs::Loc, parser::grammar};
 
@@ -32,6 +32,14 @@ impl Ident {
 
     pub fn as_str(&self) -> &str {
         &self.text
+    }
+
+    pub fn src(&self) -> Arc<NamedSource<String>> {
+        self.loc.src.clone()
+    }
+
+    pub fn src_span(&self) -> SourceSpan {
+        SourceSpan::from(self.loc.span.clone())
     }
 }
 

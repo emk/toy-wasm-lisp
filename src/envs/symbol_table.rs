@@ -1,12 +1,29 @@
 //! Symbol tables for looking up names.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 use super::DeclIdx;
 use crate::{
     ast::{Func, Ident, Local},
-    errors::{DuplicateDeclarationError, UnknownIdentifierError},
+    errors::SymbolTableError,
 };
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolCategory {
+    /// A callable function.
+    Func,
+    /// A variable (global, param, local, etc).
+    Var,
+}
+
+impl fmt::Display for SymbolCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SymbolCategory::Func => write!(f, "a function"),
+            SymbolCategory::Var => write!(f, "a variable"),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Symbol {
@@ -17,6 +34,16 @@ pub enum Symbol {
         idx: DeclIdx<Local>,
         local: Box<Local>,
     },
+}
+
+impl Symbol {
+    /// Get the category of this symbol.
+    pub fn category(&self) -> SymbolCategory {
+        match self {
+            Symbol::Func { .. } => SymbolCategory::Func,
+            Symbol::Local { .. } => SymbolCategory::Var,
+        }
+    }
 }
 
 /// Table for looking up symbols/names used in source code.
@@ -48,9 +75,9 @@ impl<'parent> SymbolTable<'parent> {
 
     /// Insert `ident` with value `sym`, returning an error if it already
     /// exists.
-    pub fn insert(&mut self, ident: Ident, sym: Symbol) -> Result<(), DuplicateDeclarationError> {
+    pub fn insert(&mut self, ident: Ident, sym: Symbol) -> Result<(), SymbolTableError> {
         if let Some((original_ident, _v)) = self.map.get_key_value(&ident) {
-            return Err(DuplicateDeclarationError::new(
+            return Err(SymbolTableError::duplicate_declaration(
                 ident,
                 original_ident.to_owned(),
             ));
@@ -67,9 +94,24 @@ impl<'parent> SymbolTable<'parent> {
     }
 
     /// Look up `ident`, returning an error if it does not exist.
-    pub fn get<'a>(&'a self, ident: &Ident) -> Result<&'a Symbol, UnknownIdentifierError> {
+    pub fn get<'a>(&'a self, ident: &Ident) -> Result<&'a Symbol, SymbolTableError> {
         self.try_get(ident)
-            .ok_or_else(|| UnknownIdentifierError::new(ident.to_owned()))
+            .ok_or_else(|| SymbolTableError::unknown_identifier(ident.to_owned()))
+    }
+
+    /// Get a function value.
+    pub fn get_func<'a>(
+        &'a self,
+        ident: &Ident,
+    ) -> Result<(DeclIdx<Func>, &'a Func), SymbolTableError> {
+        match self.get(ident)? {
+            Symbol::Func { idx, func } => Ok((*idx, func)),
+            other => Err(SymbolTableError::wrong_symbol_category(
+                ident.to_owned(),
+                SymbolCategory::Func,
+                other.category(),
+            )),
+        }
     }
 }
 
