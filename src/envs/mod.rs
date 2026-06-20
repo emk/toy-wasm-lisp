@@ -6,16 +6,15 @@
 
 pub use self::{
     decl_idx::DeclIdx,
-    decl_table_handle::DeclTableHandle,
-    ident_map::IdentMap,
+    decl_table_handle::DeclTable,
     local_env::LocalEnv,
     module_env::ModuleEnv,
+    symbol_table::{Symbol, SymbolTable},
     type_indexer::{IndexedType, TypeIndexer},
 };
 
 mod decl_idx;
 mod decl_table_handle;
-mod ident_map;
 mod local_env;
 mod module_env;
 mod symbol_table;

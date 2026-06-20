@@ -3,8 +3,11 @@ use wasm_encoder::{
     CodeSection, ExportKind, ExportSection, Function, FunctionSection, Module, TypeSection,
 };
 
-pub use super::{DeclIdx, IdentMap, IndexedType, TypeIndexer};
-use crate::ast::{Func, Ident};
+pub use super::{DeclIdx, IndexedType, Symbol, SymbolTable, TypeIndexer};
+use crate::{
+    ast::{Func, Ident},
+    envs::DeclTable,
+};
 
 /// Module-level environment.
 ///
@@ -17,7 +20,8 @@ pub struct ModuleEnv {
     codes_sec: CodeSection,
 
     type_indexer: TypeIndexer,
-    func_map: IdentMap<'static, Func>,
+    func_decls: DeclTable<Func>,
+    symbol_table: SymbolTable<'static>,
 }
 
 impl ModuleEnv {
@@ -29,15 +33,14 @@ impl ModuleEnv {
             exports_sec: ExportSection::new(),
             codes_sec: CodeSection::new(),
             type_indexer: TypeIndexer::new(),
-            func_map: IdentMap::new(),
+            func_decls: DeclTable::new(),
+            symbol_table: SymbolTable::new(),
         }
     }
 
-    /// Get our function map, for looking up callsites.
-    ///
-    /// TODO: Merge into a more complete env mechanism.
-    pub fn func_map(&self) -> &IdentMap<'static, Func> {
-        &self.func_map
+    /// Get our symbol table, for looking up names.
+    pub fn symbol_table(&self) -> &SymbolTable<'static> {
+        &self.symbol_table
     }
 
     /// Insert a type.
@@ -57,9 +60,16 @@ impl ModuleEnv {
     pub fn insert_function(&mut self, name: Ident, func: Func) -> Result<()> {
         let type_idx = self.find_or_insert_type(IndexedType::Func(func.func_type()?));
         self.funcs_sec.function(type_idx.try_as_u32()?);
-        let func_idx = self.func_map.insert(name.clone(), func.clone())?;
+        let idx = self.func_decls.insert(func.clone());
+        self.symbol_table.insert(
+            name.clone(),
+            Symbol::Func {
+                idx,
+                func: Box::new(func.clone()),
+            },
+        )?;
         if func.should_export() {
-            self.export(&name, ExportKind::Func, func_idx)?;
+            self.export(&name, ExportKind::Func, idx)?;
         }
         Ok(())
     }

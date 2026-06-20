@@ -64,7 +64,13 @@ impl Expr {
                 sink.i32_mul();
             }
             ExprVariant::Call { func_name, args } => {
-                let (id, func) = env.func_map().get(func_name)?;
+                let Symbol::Func { idx, func } = env.symbol_table().get(func_name)? else {
+                    // TODO: Move typecheck into SymbolTable.
+                    return Err(miette!(
+                        "expected function {}, got something else",
+                        func_name
+                    ));
+                };
                 let func_type = func.func_type()?;
 
                 // TODO: Actually set up type checking.
@@ -86,7 +92,7 @@ impl Expr {
                 for arg in args {
                     arg.emit(env, sink)?;
                 }
-                sink.call(id.try_as_u32()?);
+                sink.call(idx.try_as_u32()?);
             }
         }
         Ok(())
