@@ -5,7 +5,7 @@ use rust_sitter::Spanned;
 use wasm_encoder::InstructionSink;
 
 use super::Expr;
-use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
+use crate::{envs::LocalEnv, locs::Loc, parser::grammar};
 
 #[derive(Clone, Debug)]
 pub struct Block {
@@ -24,7 +24,7 @@ impl Block {
         }
     }
 
-    pub fn emit(&self, env: &ModuleEnv, sink: &mut InstructionSink<'_>) -> Result<()> {
+    pub fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         self.expr.emit(env, sink)
     }
 }

@@ -1,6 +1,9 @@
 //! Symbol tables for looking up names.
 
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    fmt,
+};
 
 use super::DeclIdx;
 use crate::{
@@ -75,15 +78,14 @@ impl<'parent> SymbolTable<'parent> {
 
     /// Insert `ident` with value `sym`, returning an error if it already
     /// exists.
-    pub fn insert(&mut self, ident: Ident, sym: Symbol) -> Result<(), SymbolTableError> {
-        if let Some((original_ident, _v)) = self.map.get_key_value(&ident) {
-            return Err(SymbolTableError::duplicate_declaration(
+    pub fn insert(&mut self, ident: Ident, sym: Symbol) -> Result<&Symbol, SymbolTableError> {
+        match self.map.entry(ident.clone()) {
+            Entry::Occupied(occupied) => Err(SymbolTableError::duplicate_declaration(
                 ident,
-                original_ident.to_owned(),
-            ));
+                occupied.key().to_owned(),
+            )),
+            Entry::Vacant(vacant) => Ok(vacant.insert(sym)),
         }
-        self.map.insert(ident, sym);
-        Ok(())
     }
 
     /// Look up `ident`, returning `None` if it does not exist.
@@ -132,10 +134,10 @@ mod tests {
         }
     }
 
-    fn idx(sym: &Symbol) -> usize {
+    fn idx(sym: &Symbol) -> u32 {
         match sym {
-            Symbol::Func { idx, .. } => idx.as_usize(),
-            Symbol::Local { idx, .. } => idx.as_usize(),
+            Symbol::Func { idx, .. } => idx.try_as_u32().unwrap(),
+            Symbol::Local { idx, .. } => idx.try_as_u32().unwrap(),
         }
     }
 

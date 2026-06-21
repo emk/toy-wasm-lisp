@@ -5,7 +5,12 @@ use rust_sitter::Spanned;
 use wasm_encoder::InstructionSink;
 
 use super::Ident;
-use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
+use crate::{
+    envs::{LocalEnv, Symbol, SymbolCategory},
+    errors::SymbolTableError,
+    locs::Loc,
+    parser::grammar,
+};
 
 #[derive(Clone, Debug)]
 pub struct Expr {
@@ -19,6 +24,7 @@ pub enum ExprVariant {
     Number(i32),
     Add { expr1: Box<Expr>, expr2: Box<Expr> },
     Mul { expr1: Box<Expr>, expr2: Box<Expr> },
+    Var(Ident),
     Call { func_name: Ident, args: Vec<Expr> },
 }
 
@@ -35,6 +41,7 @@ impl Expr {
                 expr1: Box::new(Expr::from_grammar(src.clone(), expr1)),
                 expr2: Box::new(Expr::from_grammar(src.clone(), expr2)),
             },
+            grammar::Expr::Var(name) => ExprVariant::Var(Ident::from_grammar(src.clone(), name)),
             grammar::Expr::Call {
                 func_name, args, ..
             } => ExprVariant::Call {
@@ -48,7 +55,7 @@ impl Expr {
         Self { loc, variant }
     }
 
-    pub fn emit(&self, env: &ModuleEnv, sink: &mut InstructionSink<'_>) -> Result<()> {
+    pub fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         match &self.variant {
             ExprVariant::Number(i) => {
                 sink.i32_const(*i);
@@ -63,6 +70,17 @@ impl Expr {
                 expr2.emit(env, sink)?;
                 sink.i32_mul();
             }
+            ExprVariant::Var(name) => match env.symbol_table().get(name)? {
+                Symbol::Func { .. } => {
+                    return Err(SymbolTableError::wrong_symbol_category(
+                        name.to_owned(),
+                        SymbolCategory::Var,
+                        SymbolCategory::Func,
+                    )
+                    .into());
+                }
+                Symbol::Local { idx, local } => local.emit_get(*idx, sink)?,
+            },
             ExprVariant::Call { func_name, args } => {
                 let (idx, func) = env.symbol_table().get_func(func_name)?;
                 let func_type = func.func_type()?;

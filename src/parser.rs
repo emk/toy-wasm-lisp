@@ -119,6 +119,8 @@ pub mod grammar {
             Box<Spanned<Expr>>,
         ),
         #[rust_sitter::prec(3)]
+        Var(Ident),
+        #[rust_sitter::prec(3)]
         Call {
             func_name: Ident,
             #[rust_sitter::leaf(text = "(")]

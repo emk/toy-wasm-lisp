@@ -6,7 +6,7 @@
 
 pub use self::{
     decl_idx::DeclIdx,
-    decl_table_handle::DeclTable,
+    decl_table::DeclTable,
     local_env::LocalEnv,
     module_env::ModuleEnv,
     symbol_table::{Symbol, SymbolCategory, SymbolTable},
@@ -14,7 +14,7 @@ pub use self::{
 };
 
 mod decl_idx;
-mod decl_table_handle;
+mod decl_table;
 mod local_env;
 mod module_env;
 mod symbol_table;

@@ -16,11 +16,6 @@ impl<T> DeclIdx<T> {
         }
     }
 
-    // Convert to a `usize`.
-    pub fn as_usize(&self) -> usize {
-        self.idx
-    }
-
     // Convert to a `u32`, failing if it does not fit.
     pub fn try_as_u32(&self) -> Result<u32> {
         u32::try_from(self.idx).map_err(|_| miette!("index overflow: {}", self.idx))

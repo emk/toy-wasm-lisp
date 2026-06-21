@@ -5,7 +5,12 @@ use rust_sitter::Spanned;
 use wasm_encoder::{FuncType, Function, ValType};
 
 use super::{Block, Ident, Type};
-use crate::{envs::ModuleEnv, locs::Loc, parser::grammar};
+use crate::{
+    ast::Local,
+    envs::{DeclTable, LocalEnv, ModuleEnv},
+    locs::Loc,
+    parser::grammar,
+};
 
 #[derive(Clone, Debug)]
 pub struct Func {
@@ -44,10 +49,15 @@ impl Func {
     }
 
     pub fn emit_impl(&self, mod_env: &mut ModuleEnv) -> Result<()> {
+        // Set up a LocalEnv, and seed it with our parameters.
+        let mut decls = DeclTable::new();
+        let mut local_env = LocalEnv::new(&mut decls, mod_env.symbol_table());
+        self.params.declare(&mut local_env)?;
+
         let locals = vec![];
         let mut f = Function::new(locals);
         let mut sink = f.instructions();
-        self.body.emit(mod_env, &mut sink)?;
+        self.body.emit(&local_env, &mut sink)?;
         sink.end();
         mod_env.insert_code(&f);
         Ok(())
@@ -80,13 +90,19 @@ impl Params {
             .map(|p| p.ty.val_type())
             .collect::<Result<Vec<_>>>()
     }
+
+    fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
+        for param in &self.params {
+            param.declare(local_env)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Param {
     #[expect(dead_code)]
     loc: Loc,
-    #[expect(dead_code)]
     name: Ident,
     ty: Type,
 }
@@ -99,6 +115,12 @@ impl Param {
             name: Ident::from_grammar(src.clone(), &param.name),
             ty: Type::from_grammar(src.clone(), &param.ty),
         }
+    }
+
+    fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
+        let local = Local::new(self.name.clone(), self.ty.clone());
+        local_env.insert_local(self.name.clone(), local)?;
+        Ok(())
     }
 }
 
