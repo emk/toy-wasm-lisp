@@ -1,0 +1,4 @@
+// EXPECT: f() == 7
+export func f() -> i32 {
+    1 + 2 * 3
+}

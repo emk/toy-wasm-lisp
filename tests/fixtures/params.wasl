@@ -1,0 +1,8 @@
+func sum(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+// EXPECT: f() == 12
+export func f() -> i32 {
+    1 + 2 * 3 + sum(2, 3)
+}
