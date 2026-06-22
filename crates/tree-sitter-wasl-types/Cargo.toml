@@ -1,0 +1,12 @@
+[package]
+name = "tree-sitter-wasl-types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tree-sitter = { version = "0.26.9", default-features = false }
+tree-sitter-wasl = { path = "../tree-sitter-wasl" }
+type-sitter = { version = "0.10.1", default-features = false }
+
+[build-dependencies]
+type-sitter-gen = "0.10.1"

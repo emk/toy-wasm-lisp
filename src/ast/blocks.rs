@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use miette::{NamedSource, Result};
-use rust_sitter::Spanned;
+use tree_sitter_wasl_types::nodes;
+use type_sitter::Node as _;
 use wasm_encoder::InstructionSink;
 
 use super::Expr;
-use crate::{envs::LocalEnv, locs::Loc, parser::grammar};
+use crate::{ast::NodeResultExt as _, envs::LocalEnv, locs::Loc};
 
 #[derive(Clone, Debug)]
 pub struct Block {
@@ -15,12 +16,11 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, block: &Spanned<grammar::Block>) -> Self {
-        let loc = Loc::new(src.clone(), block);
-        let grammar::Block { expr, .. } = &block.value;
+    pub fn from_grammar(src: Arc<NamedSource<String>>, block: nodes::Block<'_>) -> Self {
+        let loc = Loc::new(src.clone(), block.raw());
         Self {
             loc,
-            expr: Expr::from_grammar(src, expr),
+            expr: Expr::from_grammar(src, block.expr().expect_matching()),
         }
     }
 

@@ -6,20 +6,21 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 miette = { version = "7.6.0", features = ["fancy"] }
-rust-sitter = "0.4.5"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-#tree-sitter = "0.26.9"
-#tree-sitter-language = "0.1.7"
+tree-sitter-wasl = { path = "crates/tree-sitter-wasl" }
+tree-sitter-wasl-types = { path = "crates/tree-sitter-wasl-types" }
+type-sitter = { version = "0.10.1", default-features = false }
 wasm-encoder = "0.252.0"
 #wasmparser = "0.252.0"
 wasmprinter = "0.252.0"
 wasmtime = "45.0.2"
 
-[build-dependencies]
-rust-sitter-tool = "0.4.5"
-
 [dev-dependencies]
 glob = "0.3.3"
 regex = "1.12.4"
+
+[workspace]
+# Other crates defined in this workspace.
+members = ["crates/tree-sitter-wasl", "crates/tree-sitter-wasl-types"]

@@ -3,13 +3,11 @@
 use std::sync::Arc;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
-use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
-
-use tracing::debug;
+//use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
 
 use crate::{ast::Ident, envs::SymbolCategory};
 
-/// A [`rust_sitter`]-derived parse error.
+/// A parse error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[error("{message}")]
 #[diagnostic()]
@@ -20,6 +18,16 @@ pub struct ParseError {
 
     // Text of the error.
     message: String,
+}
+
+impl ParseError {
+    /// Create a new [`ParseError`].
+    pub fn new(span: SourceSpan, message: impl Into<String>) -> Self {
+        Self {
+            span,
+            message: message.into(),
+        }
+    }
 }
 
 /// Multiple [`ParseError`]s that occurred during parsing.
@@ -37,48 +45,8 @@ pub struct ParseErrors {
 impl ParseErrors {
     /// Construct a set of parse errors from source code and [`RustSitterParseError`]s. This
     /// will filter out less interesting errors and truncate after a few errors.
-    pub fn new(src: Arc<NamedSource<String>>, sitter_errs: &[RustSitterParseError]) -> Self {
-        debug!("Errors: {sitter_errs:?}");
-        let mut errs = vec![];
-        collect_errs(sitter_errs, &mut errs);
-        if errs.len() > 3 {
-            errs.truncate(3);
-        }
+    pub fn new(src: Arc<NamedSource<String>>, errs: Vec<ParseError>) -> Self {
         Self { src, errs }
-    }
-}
-
-/// Recursively collect parse errors.
-fn collect_errs(sitter_errs: &[RustSitterParseError], out_errs: &mut Vec<ParseError>) {
-    for err in sitter_errs {
-        let span = SourceSpan::from(err.start..err.end);
-        match &err.reason {
-            ParseErrorReason::UnexpectedToken(token) => {
-                out_errs.push(ParseError {
-                    span,
-                    message: format!("unexpected token: {:?}", token),
-                });
-            }
-            ParseErrorReason::FailedNode(parse_errors) => {
-                let before_count = out_errs.len();
-                collect_errs(parse_errors, out_errs);
-
-                // If we haven't pushed any better child error, try
-                // something more generic.
-                if out_errs.len() == before_count {
-                    out_errs.push(ParseError {
-                        span,
-                        message: "could not parse".to_owned(),
-                    });
-                }
-            }
-            ParseErrorReason::MissingToken(token) => {
-                out_errs.push(ParseError {
-                    span,
-                    message: format!("missing token: {:?}", token),
-                });
-            }
-        }
     }
 }
 

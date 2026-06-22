@@ -1,0 +1,41 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "wasl",
+      "camelcase": "Wasl",
+      "title": "Wasl",
+      "scope": "source.wasl",
+      "file-types": ["wasl"],
+      "injection-regex": "^wasl$",
+      "class-name": "TreeSitterWasl",
+      "highlights": "queries/highlights.scm",
+      "tags": "queries/tags.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Experimental grammar for a \"system\" language targetting WASL & WASL WC",
+    "authors": [
+      {
+        "name": "Eric Kidd",
+        "url": ""
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/emk/toy-wasm-lisp",
+      "funding": ""
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "java": false,
+    "node": false,
+    "python": false,
+    "rust": true,
+    "swift": false,
+    "zig": false
+  }
+}

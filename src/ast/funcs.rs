@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use miette::{NamedSource, Result};
-use rust_sitter::Spanned;
+use tree_sitter_wasl_types::nodes;
+use type_sitter::Node as _;
 use wasm_encoder::{FuncType, Function, ValType};
 
 use super::{Block, Ident, Type};
 use crate::{
-    ast::Local,
+    ast::{Local, NodeResultExt},
     envs::{DeclTable, LocalEnv, ModuleEnv},
     locs::Loc,
-    parser::grammar,
 };
 
 #[derive(Clone, Debug)]
@@ -24,15 +24,21 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, block: &Spanned<grammar::Func>) -> Self {
-        let loc = Loc::new(src.clone(), block);
+    pub fn from_grammar(src: Arc<NamedSource<String>>, func: nodes::Func<'_>) -> Self {
+        let loc = Loc::new(src.clone(), func.raw());
+        let params = func.params().expect_matching();
+        let returns = func.returns().expect_matching();
+        let returns_loc = match returns {
+            Some(returns) => Loc::new(src.clone(), returns.raw()),
+            None => Loc::after(src.clone(), params.raw()),
+        };
         Self {
             loc,
-            should_export: block.export.is_some(),
-            name: Ident::from_grammar(src.clone(), &block.name),
-            params: Params::from_grammar(src.clone(), &block.params),
-            returns: Returns::from_grammar(src.clone(), &block.returns),
-            body: Block::from_grammar(src, &block.body),
+            should_export: func.export().is_some(),
+            name: Ident::from_grammar(src.clone(), func.name().expect_matching()),
+            params: Params::from_grammar(src.clone(), params),
+            returns: Returns::from_grammar(src.clone(), returns_loc, returns),
+            body: Block::from_grammar(src, func.body().expect_matching()),
         }
     }
 
@@ -72,14 +78,14 @@ pub struct Params {
 }
 
 impl Params {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, params: &Spanned<grammar::Params>) -> Self {
-        let loc = Loc::new(src.clone(), params);
+    pub fn from_grammar(src: Arc<NamedSource<String>>, params: nodes::Params<'_>) -> Self {
+        let loc = Loc::new(src.clone(), params.raw());
+        let mut cursor = params.walk();
         Self {
             loc,
             params: params
-                .params
-                .iter()
-                .map(|p| Param::from_grammar(src.clone(), p))
+                .params(&mut cursor)
+                .map(|p| Param::from_grammar(src.clone(), p.expect_matching()))
                 .collect::<Vec<_>>(),
         }
     }
@@ -108,12 +114,12 @@ pub struct Param {
 }
 
 impl Param {
-    fn from_grammar(src: Arc<NamedSource<String>>, param: &Spanned<grammar::Param>) -> Self {
-        let loc = Loc::new(src.clone(), param);
+    pub fn from_grammar(src: Arc<NamedSource<String>>, param: nodes::Param<'_>) -> Self {
+        let loc = Loc::new(src.clone(), param.raw());
         Self {
             loc,
-            name: Ident::from_grammar(src.clone(), &param.name),
-            ty: Type::from_grammar(src.clone(), &param.ty),
+            name: Ident::from_grammar(src.clone(), param.name().expect_matching()),
+            ty: Type::from_grammar(src.clone(), param.r#type().expect_matching()),
         }
     }
 
@@ -134,16 +140,22 @@ pub struct Returns {
 impl Returns {
     pub fn from_grammar(
         src: Arc<NamedSource<String>>,
-        returns: &Spanned<Option<grammar::Returns>>,
+        loc: Loc,
+        returns: Option<nodes::Returns<'_>>,
     ) -> Self {
-        let loc = Loc::new(src.clone(), returns);
-        let tys = match &returns.value {
-            None => vec![],
-            Some(grammar::Returns::Single { ty, .. }) => vec![Type::from_grammar(src, ty)],
-            Some(grammar::Returns::Multiple { tys, .. }) => tys
-                .iter()
-                .map(|ty| Type::from_grammar(src.clone(), ty))
-                .collect::<Vec<_>>(),
+        let mut tys = vec![];
+        match returns {
+            None => {}
+            Some(returns) => {
+                if let Some(ty) = returns.single() {
+                    tys.push(Type::from_grammar(src.clone(), ty.expect_matching()));
+                } else {
+                    let mut c = returns.walk();
+                    for ty in returns.multiples(&mut c) {
+                        tys.push(Type::from_grammar(src.clone(), ty.expect_matching()));
+                    }
+                }
+            }
         };
         Self { loc, tys }
     }

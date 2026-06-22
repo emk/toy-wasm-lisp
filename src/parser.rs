@@ -2,152 +2,107 @@
 
 use std::sync::Arc;
 
-use miette::{NamedSource, Result};
+use miette::{NamedSource, Result, SourceSpan};
 use tracing::debug;
+use tree_sitter_wasl_types::nodes;
+use type_sitter::{Parser, raw};
 
-use crate::{ast::Mod, errors::ParseErrors};
+use crate::{
+    ast::Mod,
+    errors::{ParseError, ParseErrors},
+};
+
+/// If we collect this many parse errors, stop reporting more.
+const MAX_PARSE_ERRORS: usize = 3;
 
 /// Parse `src`, using `
 pub fn parse(filename: &str, src: &str) -> Result<Mod> {
     debug!(%filename, %src, "Parsing");
     let src = Arc::new(NamedSource::new(filename, src.to_owned()));
-    let grammar_ast = grammar::parse(src.as_ref().inner())
-        .map_err(|errs| ParseErrors::new(src.clone(), &errs))?;
-    let ast = Mod::from_grammar(src, &grammar_ast);
+
+    let mut parser = Parser::<nodes::SourceFile<'static>>::new(&tree_sitter_wasl::LANGUAGE.into())
+        .expect("tree-sitter version mistmatch");
+    let parsed = parser
+        .parse(src.as_ref().inner(), None)
+        .expect("language not assigned to parser");
+
+    let source_file = parsed.root_node().expect("expected source_file node");
+    let ast = Mod::from_grammar(src, source_file);
     Ok(ast)
 }
 
-#[rust_sitter::grammar("wasl")]
-pub mod grammar {
-    use rust_sitter::Spanned;
+/// Recursively walk the node tree, finding all errors.
+///
+/// TODO: Figure out if
+fn collect_errors(src: Arc<NamedSource<String>>, root: raw::Node<'_>) -> Option<ParseErrors> {
+    let mut out = vec![];
+    let mut cursor = root.walk();
+    let mut existing_error_count_stack = vec![];
+    'walk: loop {
+        let node = cursor.node();
 
-    #[rust_sitter::language]
-    #[derive(Debug)]
-    pub struct Mod {
-        pub funcs: Vec<Spanned<Func>>,
+        // We keep track of how many errors we've seen every time we enter a node,
+        // because this allows us to selectively emit errors for `has_error`
+        existing_error_count_stack.push(out.len());
+
+        // See if we have any kind of useful error here.
+        if node.is_error() {
+            out.push(ParseError::new(source_span(node), "unexpected input"));
+        } else if node.is_missing() {
+            out.push(ParseError::new(source_span(node), "missing token"));
+        }
+        if out.len() >= MAX_PARSE_ERRORS {
+            break 'walk;
+        }
+
+        // We don't have a good error at this level, so walk deeper.
+        if node.has_error()
+            && out.len()
+                == *existing_error_count_stack
+                    .last()
+                    .expect("should always have stack entry here")
+            && cursor.goto_first_child()
+        {
+            continue 'walk;
+        }
+
+        // Figure out how to advance.
+        loop {
+            // Try to progress at the same level.
+            if cursor.goto_next_sibling() {
+                continue 'walk;
+            }
+
+            // We're finishing this node (one way or another). So if we haven't
+            // output a decent error since we entered this level, add
+            // _something_.
+            if out.len()
+                == existing_error_count_stack
+                    .pop()
+                    .expect("should always have stack entry here")
+            {
+                out.push(ParseError::new(source_span(node), "syntax error"));
+            }
+
+            // Try to go up.
+            if cursor.goto_parent() {
+                continue;
+            }
+
+            // No sibling or parent; we're done.
+            break 'walk;
+        }
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Func {
-        #[rust_sitter::leaf(text = "export")]
-        pub export: Option<()>,
-
-        #[rust_sitter::leaf(text = "func")]
-        _func: (),
-
-        pub name: Ident,
-        pub params: Spanned<Params>,
-        pub returns: Spanned<Option<Returns>>,
-        pub body: Spanned<Block>,
+    if out.is_empty() {
+        return None;
     }
+    Some(ParseErrors::new(src, out))
+}
 
-    #[derive(Clone, Debug)]
-    pub struct Params {
-        #[rust_sitter::leaf(text = "(")]
-        _params_start: (),
-
-        #[rust_sitter::delimited(
-            #[rust_sitter::leaf(text = ",")]
-            ()
-        )]
-        pub params: Vec<Spanned<Param>>,
-
-        #[rust_sitter::leaf(text = ")")]
-        _params_end: (),
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Param {
-        pub name: Ident,
-        #[rust_sitter::leaf(text = ":")]
-        _colon: (),
-        pub ty: Spanned<Type>,
-    }
-
-    #[derive(Clone, Debug)]
-    pub enum Returns {
-        Single {
-            #[rust_sitter::leaf(text = "->")]
-            _arrow: (),
-            ty: Spanned<Type>,
-        },
-        Multiple {
-            #[rust_sitter::leaf(text = "->")]
-            _arrow: (),
-            #[rust_sitter::leaf(text = "(")]
-            _results_start: (),
-            #[rust_sitter::delimited(
-                #[rust_sitter::leaf(text = ",")]
-                ()
-            )]
-            tys: Vec<Spanned<Type>>,
-            #[rust_sitter::leaf(text = ")")]
-            _results_end: (),
-        },
-    }
-
-    #[derive(Clone, Copy, Debug)]
-    pub enum Type {
-        #[rust_sitter::leaf(text = "i32")]
-        I32,
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Block {
-        #[rust_sitter::leaf(text = "{")]
-        _body_start: (),
-
-        pub expr: Spanned<Expr>,
-
-        #[rust_sitter::leaf(text = "}")]
-        _body_end: (),
-    }
-
-    #[derive(Clone, Debug)]
-    pub enum Expr {
-        Number(#[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32),
-        #[rust_sitter::prec_left(1)]
-        Add(
-            Box<Spanned<Expr>>,
-            #[rust_sitter::leaf(text = "+")] (),
-            Box<Spanned<Expr>>,
-        ),
-        #[rust_sitter::prec_left(2)]
-        Mul(
-            Box<Spanned<Expr>>,
-            #[rust_sitter::leaf(text = "*")] (),
-            Box<Spanned<Expr>>,
-        ),
-        #[rust_sitter::prec(3)]
-        Var(Ident),
-        #[rust_sitter::prec(3)]
-        Call {
-            func_name: Ident,
-            #[rust_sitter::leaf(text = "(")]
-            _args_start: (),
-            #[rust_sitter::delimited(
-                #[rust_sitter::leaf(text = ",")]
-                ()
-            )]
-            args: Vec<Spanned<Expr>>,
-            #[rust_sitter::leaf(text = ")")]
-            _args_end: (),
-        },
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct Ident {
-        #[rust_sitter::word]
-        #[rust_sitter::leaf(pattern = "[_a-zA-Z][_a-zA-Z0-9]*", transform = |v| v.to_string())]
-        pub text: Spanned<String>,
-    }
-
-    #[rust_sitter::extra]
-    #[allow(dead_code)]
-    struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s|(//.*)")]
-        _whitespace: (),
-    }
+/// Get the span for a node.
+fn source_span(node: raw::Node<'_>) -> SourceSpan {
+    SourceSpan::from((node.start_byte(), node.end_byte()))
 }
 
 #[cfg(test)]

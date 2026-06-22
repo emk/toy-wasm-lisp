@@ -5,8 +5,11 @@ use std::{
 };
 
 use miette::{NamedSource, SourceSpan};
+use tree_sitter_wasl_types::nodes;
+use type_sitter::Node as _;
 
-use crate::{locs::Loc, parser::grammar};
+use super::node_source;
+use crate::locs::Loc;
 
 #[derive(Clone, Debug)]
 pub struct Ident {
@@ -15,10 +18,11 @@ pub struct Ident {
 }
 
 impl Ident {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ident: &grammar::Ident) -> Self {
+    pub fn from_grammar(src: Arc<NamedSource<String>>, ident: nodes::Ident<'_>) -> Self {
+        let loc = Loc::new(src.clone(), ident.raw());
         Ident {
-            loc: Loc::new(src, &ident.text),
-            text: ident.text.value.clone(),
+            loc,
+            text: node_source(&src, ident.raw()).to_owned(),
         }
     }
 

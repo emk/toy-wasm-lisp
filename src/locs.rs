@@ -7,7 +7,7 @@ use std::{
 };
 
 use miette::NamedSource;
-use rust_sitter::Spanned;
+use type_sitter::raw;
 
 /// The location of an AST node in the source. This is normally used in
 /// [`miette`] errors.
@@ -21,12 +21,19 @@ pub struct Loc {
 }
 
 impl Loc {
-    /// Create a [`Loc`] from a source location and a spanned
-    /// grammar node.
-    pub fn new<T>(src: Arc<NamedSource<String>>, spanned: &Spanned<T>) -> Self {
+    /// Create a [`Loc`] from a source location and a type-sitter node.
+    pub fn new(src: Arc<NamedSource<String>>, node: &raw::Node<'_>) -> Self {
         Self {
             src,
-            span: spanned.span.0..spanned.span.1,
+            span: node.start_byte()..node.end_byte(),
+        }
+    }
+
+    /// Create a [`Loc`] pointing just _after_ `prev_node`. Used for optional elements.
+    pub fn after(src: Arc<NamedSource<String>>, prev_node: &raw::Node<'_>) -> Self {
+        Self {
+            src,
+            span: prev_node.end_byte()..prev_node.end_byte(),
         }
     }
 
