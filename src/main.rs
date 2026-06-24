@@ -8,6 +8,10 @@ use miette::{Context, IntoDiagnostic, Result, miette};
 use tracing::{debug, trace};
 use tracing_subscriber::{EnvFilter, field::MakeExt as _, fmt};
 use wasmtime::{Caller, Engine, Instance, Linker, Module, Store};
+use wasmtime_wasi::{
+    WasiCtxBuilder,
+    p1::{self, WasiP1Ctx},
+};
 
 use crate::parser::parse;
 
@@ -51,8 +55,10 @@ fn init_tracing() {
         .init();
 }
 
+type MyState = WasiP1Ctx;
+
 /// Compile source code to WASM, and instantiate it.
-fn compile_and_instantiate(path: &Path) -> Result<(Store<()>, Instance)> {
+fn compile_and_instantiate(path: &Path) -> Result<(Store<MyState>, Instance)> {
     let src = fs::read_to_string(path)
         .into_diagnostic()
         .with_context(|| format!("Failed to read input file: {}", path.display()))?;
@@ -64,15 +70,17 @@ fn compile_and_instantiate(path: &Path) -> Result<(Store<()>, Instance)> {
     debug!(%wat, "Compiled");
 
     let engine = Engine::default();
-    let mut linker = Linker::new(&engine);
+    let mut linker = Linker::<MyState>::new(&engine);
+    p1::add_to_linker_sync(&mut linker, |t| t).map_err(|e| miette!("{e}"))?;
     if cfg!(test) {
         // If we're running tests, install a `wasl_test` API.
         linker
-            .func_wrap("wasl_test", "the_answer", |_caller: Caller<'_, ()>| 42)
+            .func_wrap("wasl_test", "the_answer", |_caller: Caller<'_, _>| 42)
             .map_err(|e| miette!("{e}"))?;
     }
     let module = Module::new(&engine, &wasm).map_err(|e| miette!("{e}"))?;
-    let mut store: Store<()> = Store::new(&engine, ());
+    let mut store: Store<MyState> =
+        Store::new(&engine, WasiCtxBuilder::new().inherit_stdio().build_p1());
     let instance = linker
         .instantiate(&mut store, &module)
         .map_err(|e| miette!("{e}"))?;
@@ -95,7 +103,7 @@ mod tests {
             .try_init();
     }
 
-    fn call_f(store: &mut Store<()>, instance: &Instance) -> Result<i32> {
+    fn call_f(store: &mut Store<MyState>, instance: &Instance) -> Result<i32> {
         let f = instance
             .get_typed_func::<(), (i32,)>(&mut *store, "f")
             .map_err(|e| miette!("{e}"))?;

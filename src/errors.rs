@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
 
-use crate::{ast::Ident, envs::SymbolCategory};
+use crate::{
+    ast::{ExprType, Ident, ValType},
+    envs::SymbolCategory,
+};
 
 /// A parse error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
@@ -135,6 +138,35 @@ impl SymbolTableError {
             ident,
             expected_category,
             found_category,
+            src,
+            span,
+        }
+    }
+}
+
+/// Type checking errors.
+#[derive(thiserror::Error, Debug, Diagnostic)]
+#[error("expected type `{expected}`, but expression has type `{found}`")]
+pub struct TypeCheckError {
+    expected: ValType,
+    found: ExprType,
+
+    /// Source file containing the error.
+    #[source_code]
+    src: Arc<NamedSource<String>>,
+
+    /// Location of the error.
+    #[label("expected `{expected}")]
+    span: SourceSpan,
+}
+
+impl TypeCheckError {
+    pub fn new(expected: ValType, found: ExprType) -> Self {
+        let src = expected.loc.src.clone();
+        let span = SourceSpan::from(expected.loc.span.clone());
+        Self {
+            expected,
+            found,
             src,
             span,
         }

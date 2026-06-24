@@ -1,3 +1,5 @@
+// The original WASI 0.1 interface, while it was
+// still really simple.
 import wasi_snapshot_preview1 {
     // Write I/O vecs.
     func fd_write(
@@ -14,6 +16,8 @@ import wasi_snapshot_preview1 {
     func proc_exit(exitcode: u32);
 }
 
-export func _start() -> i32 {
+// EXPECT: f() == 0
+export func f() -> u32 {
+    // TODO: Write data using fd_write.
     0
 }

@@ -1,14 +1,21 @@
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, fmt, sync::Arc};
 
 use miette::NamedSource;
+use smallvec::SmallVec;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::ValType as WasmValType;
 
 use crate::{
     ast::{Ident, NodeResultExt},
+    errors::TypeCheckError,
     locs::Loc,
 };
+
+/// Check for a subtype relationship.
+pub trait IsSubtypeOf {
+    fn is_subtype_of(&self, other: &Self) -> bool;
+}
 
 /// Convert to a native WASM-representable type.
 pub trait ToWasmType {
@@ -53,6 +60,34 @@ impl PtrType {
     }
 }
 
+impl fmt::Display for PtrType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "*")?;
+        if self.is_mut {
+            write!(f, "mut ")?;
+        }
+        if self.is_nullable {
+            write!(f, "null ")?;
+        }
+        write!(f, "{}", self.storage_ty)
+    }
+}
+
+impl IsSubtypeOf for PtrType {
+    /// Can `self` _always_ be passed to something expecting `other`?
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        // Cannot pass *T to *mut T.
+        if !self.is_mut && other.is_mut {
+            return false;
+        }
+        // Cannot pass *null T to *T.
+        if self.is_nullable && !other.is_nullable {
+            return false;
+        }
+        self.storage_ty.is_subtype_of(&other.storage_ty)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum LinearValTypeVariant {
     I32,
@@ -85,6 +120,28 @@ impl LinearValType {
         Self {
             loc: Loc::new_for_test(),
             variant: LinearValTypeVariant::I32,
+        }
+    }
+}
+
+impl fmt::Display for LinearValType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.variant {
+            LinearValTypeVariant::I32 => "i32".fmt(f),
+            LinearValTypeVariant::U32 => "u32".fmt(f),
+            LinearValTypeVariant::Ptr(ptr_type) => write!(f, "{ptr_type}"),
+        }
+    }
+}
+
+impl IsSubtypeOf for LinearValType {
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        use LinearValTypeVariant as LVTV;
+        match (&self.variant, &other.variant) {
+            (LVTV::I32, LVTV::I32) => true,
+            (LVTV::U32, LVTV::U32) => true,
+            (LVTV::Ptr(ptr1), LVTV::Ptr(ptr2)) => ptr1.is_subtype_of(ptr2),
+            _ => false,
         }
     }
 }
@@ -138,6 +195,32 @@ impl LinearStorageType {
             }
         };
         Self { loc, variant }
+    }
+}
+
+impl fmt::Display for LinearStorageType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.variant {
+            LinearStorageTypeVariant::I8 => "i8".fmt(f),
+            LinearStorageTypeVariant::U8 => "u8".fmt(f),
+            LinearStorageTypeVariant::LinearValType(ty) => write!(f, "{ty}"),
+            LinearStorageTypeVariant::LinearRecordType(rec) => write!(f, "{rec}"),
+        }
+    }
+}
+
+impl IsSubtypeOf for LinearStorageType {
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        use LinearStorageTypeVariant as LSTV;
+        match (&self.variant, &other.variant) {
+            (LSTV::I8, LSTV::I8) => true,
+            (LSTV::U8, LSTV::U8) => true,
+            (LSTV::LinearValType(ty1), LSTV::LinearValType(ty2)) => ty1.is_subtype_of(ty2),
+            (LSTV::LinearRecordType(rec1), LSTV::LinearRecordType(rec2)) => {
+                rec1.is_subtype_of(rec2)
+            }
+            _ => false,
+        }
     }
 }
 
@@ -206,6 +289,34 @@ impl LinearRecordType {
     }
 }
 
+impl fmt::Display for LinearRecordType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "record {{ ")?;
+        for (i, field) in self.fields.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {}", field.name, field.ty)?;
+        }
+        write!(f, " }}")
+    }
+}
+
+impl IsSubtypeOf for LinearRecordType {
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        if self.fields.len() != other.fields.len() {
+            return false;
+        }
+        for (field1, field2) in self.fields.iter().zip(other.fields.iter()) {
+            // Field types are invariant for now.
+            if !field1.ty.is_subtype_of(&field2.ty) || !field2.ty.is_subtype_of(&field1.ty) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl LinearStorable for LinearRecordType {
     fn size_of(&self) -> usize {
         self.size
@@ -244,8 +355,7 @@ pub enum ValTypeVariant {
 /// passed to functions and returned from functions.
 #[derive(Clone, Debug)]
 pub struct ValType {
-    #[expect(dead_code)]
-    loc: Loc,
+    pub loc: Loc,
     variant: ValTypeVariant,
 }
 
@@ -269,12 +379,66 @@ impl ValType {
     }
 }
 
+impl fmt::Display for ValType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.variant {
+            ValTypeVariant::Linear(ty) => write!(f, "{}", ty),
+        }
+    }
+}
+
+impl IsSubtypeOf for ValType {
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        use ValTypeVariant as VTV;
+        match (&self.variant, &other.variant) {
+            (VTV::Linear(ty1), VTV::Linear(ty2)) => ty1.is_subtype_of(ty2),
+        }
+    }
+}
+
 impl ToWasmType for ValType {
     type Output = WasmValType;
 
     fn to_wasm_type(&self) -> Self::Output {
         match &self.variant {
             ValTypeVariant::Linear(ty) => ty.to_wasm_type(),
+        }
+    }
+}
+
+/// The type of an expression. Used in the type inference algorithm, not the
+/// grammar. Void types are created by semi-colon terminated blocks and function
+/// calls, and multiple value types are created by function calls.
+#[derive(Clone, Debug)]
+pub struct ExprType {
+    tys: SmallVec<[ValType; 1]>,
+}
+
+impl ExprType {
+    fn expecting(&self, ty: &ValType) -> Result<(), TypeCheckError> {
+        if self.tys.len() == 1 && self.tys[0].is_subtype_of(ty) {
+            Ok(())
+        } else {
+            Err(TypeCheckError::new(ty.clone(), self.clone()))
+        }
+    }
+}
+
+impl fmt::Display for ExprType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.tys.len() {
+            0 => write!(f, "void"),
+            1 => write!(f, "{}", self.tys[0]),
+            _ => {
+                write!(f, "(")?;
+                for (i, ty) in self.tys.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", ty)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
