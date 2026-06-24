@@ -3,11 +3,11 @@ use std::sync::Arc;
 use miette::{NamedSource, Result};
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
-use wasm_encoder::{FuncType, Function, ValType};
+use wasm_encoder::{FuncType, Function, ValType as WasmValType};
 
-use super::{Block, Ident, Type};
+use super::{Block, Ident, ValType};
 use crate::{
-    ast::{Local, NodeResultExt},
+    ast::{Local, NodeResultExt, types::ToWasmType},
     envs::{DeclTable, LocalEnv, ModuleEnv},
     locs::Loc,
 };
@@ -117,11 +117,12 @@ impl Params {
         }
     }
 
-    fn types(&self) -> Result<Vec<ValType>> {
-        self.params
+    fn types(&self) -> Result<Vec<WasmValType>> {
+        Ok(self
+            .params
             .iter()
-            .map(|p| p.ty.val_type())
-            .collect::<Result<Vec<_>>>()
+            .map(|p| p.ty.to_wasm_type())
+            .collect::<Vec<_>>())
     }
 
     fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
@@ -137,7 +138,7 @@ pub struct Param {
     #[expect(dead_code)]
     loc: Loc,
     name: Ident,
-    ty: Type,
+    ty: ValType,
 }
 
 impl Param {
@@ -146,7 +147,7 @@ impl Param {
         Self {
             loc,
             name: Ident::from_grammar(src.clone(), param.name().expect_matching()),
-            ty: Type::from_grammar(src.clone(), param.r#type().expect_matching()),
+            ty: ValType::from_grammar(src.clone(), param.r#type().expect_matching()),
         }
     }
 
@@ -161,7 +162,7 @@ impl Param {
 pub struct Returns {
     #[expect(dead_code)]
     loc: Loc,
-    tys: Vec<Type>,
+    tys: Vec<ValType>,
 }
 
 impl Returns {
@@ -175,11 +176,11 @@ impl Returns {
             None => {}
             Some(returns) => {
                 if let Some(ty) = returns.single() {
-                    tys.push(Type::from_grammar(src.clone(), ty.expect_matching()));
+                    tys.push(ValType::from_grammar(src.clone(), ty.expect_matching()));
                 } else {
                     let mut c = returns.walk();
                     for ty in returns.multiples(&mut c) {
-                        tys.push(Type::from_grammar(src.clone(), ty.expect_matching()));
+                        tys.push(ValType::from_grammar(src.clone(), ty.expect_matching()));
                     }
                 }
             }
@@ -187,10 +188,11 @@ impl Returns {
         Self { loc, tys }
     }
 
-    fn types(&self) -> Result<Vec<ValType>> {
-        self.tys
+    fn types(&self) -> Result<Vec<WasmValType>> {
+        Ok(self
+            .tys
             .iter()
-            .map(|ty| ty.val_type())
-            .collect::<Result<Vec<_>>>()
+            .map(|ty| ty.to_wasm_type())
+            .collect::<Vec<_>>())
     }
 }

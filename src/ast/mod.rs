@@ -13,7 +13,7 @@ pub use self::{
     imports::Import,
     locals::Local,
     mods::Mod,
-    types::Type,
+    types::ValType,
 };
 
 mod blocks;

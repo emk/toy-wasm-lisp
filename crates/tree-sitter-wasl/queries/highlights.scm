@@ -1,6 +1,6 @@
 ["import" "export" "func"] @keyword
 
-(type) @type
+(_val_type) @type
 (number) @number
 (func_sig name: (ident) @function)
 (comment) @comment

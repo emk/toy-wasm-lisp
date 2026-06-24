@@ -3,7 +3,7 @@
 use miette::Result;
 use wasm_encoder::InstructionSink;
 
-use super::{Ident, Type};
+use super::{Ident, ValType};
 use crate::envs::DeclIdx;
 
 /// Local variable declaration.
@@ -12,11 +12,11 @@ pub struct Local {
     #[expect(dead_code)]
     name: Ident,
     #[expect(dead_code)]
-    ty: Type,
+    ty: ValType,
 }
 
 impl Local {
-    pub fn new(name: Ident, ty: Type) -> Self {
+    pub fn new(name: Ident, ty: ValType) -> Self {
         Self { name, ty }
     }
 
@@ -24,7 +24,7 @@ impl Local {
     pub fn new_i32_for_test(name: &str) -> Self {
         Self {
             name: Ident::new_for_test(name),
-            ty: Type::new_i32_for_test(),
+            ty: ValType::new_i32_for_test(),
         }
     }
 
