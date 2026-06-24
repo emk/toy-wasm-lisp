@@ -1,0 +1,8 @@
+import wasl_test {
+    func the_answer() -> i32;
+}
+
+// EXPECT: f() == 42
+export func f() -> i32 {
+    the_answer()
+}

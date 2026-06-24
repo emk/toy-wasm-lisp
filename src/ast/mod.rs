@@ -1,19 +1,26 @@
 //! Abstract syntax tree nodes for WASL.
 //!
-//! Note that the actual node _types_ are declared in [`crate::parser::grammar`]
-//! grammar, but the actual
-
+//! These are what we use internally, instead of the the "AST" produced by the
+//! parser. Conversions are handled by various `TYPE::from_grammar` functions.
 use miette::NamedSource;
 use type_sitter::{NodeResult, raw};
 
 pub use self::{
-    blocks::Block, exprs::Expr, funcs::Func, idents::Ident, locals::Local, mods::Mod, types::Type,
+    blocks::Block,
+    exprs::Expr,
+    funcs::{Func, FuncSig},
+    idents::Ident,
+    imports::Import,
+    locals::Local,
+    mods::Mod,
+    types::Type,
 };
 
 mod blocks;
 mod exprs;
 mod funcs;
 mod idents;
+mod imports;
 mod locals;
 mod mods;
 mod types;

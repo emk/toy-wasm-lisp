@@ -13,7 +13,7 @@ tree-sitter-wasl = { path = "crates/tree-sitter-wasl" }
 tree-sitter-wasl-types = { path = "crates/tree-sitter-wasl-types" }
 type-sitter = { version = "0.10.1", default-features = false }
 wasm-encoder = "0.252.0"
-#wasmparser = "0.252.0"
+wasmparser = "0.252.0"
 wasmprinter = "0.252.0"
 wasmtime = "45.0.2"
 

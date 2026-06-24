@@ -20,3 +20,16 @@ An experiment at staying really close to the "metal" (lower-level than C). To ru
 env RUST_LOG=toy_wasm_lisp=debug,warn cargo run -- \
     run runtime/wasl/runtime.wasl
 ```
+
+### Force rebuilding the grammar (fish shell)
+
+Something like this:
+
+```sh
+pushd crates/tree-sitter-wasl/; \
+tree-sitter generate; \
+popd; \
+cargo build
+```
+
+Then reload `rust-analyzer` so it notices the change.

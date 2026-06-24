@@ -1,8 +1,8 @@
-["export" "func"] @keyword
+["import" "export" "func"] @keyword
 
 (type) @type
 (number) @number
-(func name: (ident) @function)
+(func_sig name: (ident) @function)
 (comment) @comment
 
 ["{" "}"] @punctuation.bracket

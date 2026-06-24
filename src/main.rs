@@ -7,7 +7,7 @@ use clap::Parser;
 use miette::{Context, IntoDiagnostic, Result, miette};
 use tracing::{debug, trace};
 use tracing_subscriber::{EnvFilter, field::MakeExt as _, fmt};
-use wasmtime::{Engine, Instance, Linker, Module, Store};
+use wasmtime::{Caller, Engine, Instance, Linker, Module, Store};
 
 use crate::parser::parse;
 
@@ -64,7 +64,13 @@ fn compile_and_instantiate(path: &Path) -> Result<(Store<()>, Instance)> {
     debug!(%wat, "Compiled");
 
     let engine = Engine::default();
-    let linker = Linker::new(&engine);
+    let mut linker = Linker::new(&engine);
+    if cfg!(test) {
+        // If we're running tests, install a `wasl_test` API.
+        linker
+            .func_wrap("wasl_test", "the_answer", |_caller: Caller<'_, ()>| 42)
+            .map_err(|e| miette!("{e}"))?;
+    }
     let module = Module::new(&engine, &wasm).map_err(|e| miette!("{e}"))?;
     let mut store: Store<()> = Store::new(&engine, ());
     let instance = linker

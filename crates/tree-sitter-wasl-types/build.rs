@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::{env, fs};
-use type_sitter_gen::{generate_nodes, generate_queries, super_nodes};
+use type_sitter_gen::{dylib_path, generate_nodes, generate_queries, super_nodes};
 
 fn main() {
     // Common setup
@@ -10,6 +10,10 @@ fn main() {
     // Obligatory: in this and future lines, replace `../tree-sitter-wasl`
     // with the path to your grammar's folder, relative to the folder containing `Cargo.toml`
     println!("cargo::rerun-if-changed=../tree-sitter-wasl");
+
+    // BUG: `type-sitter` fails to do a proper staleness check on this file, so
+    // we need to clean it up ourselves.
+    let _ = fs::remove_file(dylib_path(Path::new("../tree-sitter-wasl")));
 
     // To generate nodes
     let path = Path::new("../tree-sitter-wasl/src/node-types.json");

@@ -1,1 +1,1 @@
-(func name: (ident) @name) @definition.function
+(func_sig name: (ident) @name) @definition.function

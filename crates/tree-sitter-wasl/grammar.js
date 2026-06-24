@@ -22,21 +22,40 @@ export default grammar({
     $.comment,
   ],
 
-  supertypes: ($) => [$._expr, $._atom],
+  supertypes: ($) => [$._top_level, $._expr, $._atom],
 
   rules: {
-    source_file: ($) => repeat($.func),
+    source_file: ($) => repeat($._top_level),
+
+    _top_level: ($) => choice($.import_block, $.func),
+
+    import_block: ($) =>
+      seq(
+        "import",
+        field("mod_name", $.ident),
+        "{",
+        repeat(seq(field("import", $.import_func), ";")),
+        "}",
+      ),
+
+    import_func: ($) => $.func_sig,
+
     func: ($) =>
       seq(
         field("export", optional("export")),
+        field("sig", $.func_sig),
+        field("body", $.block),
+      ),
+
+    func_sig: ($) =>
+      seq(
         "func",
         field("name", $.ident),
         field("params", $.params),
         optional(field("returns", $.returns)),
-        field("body", $.block),
       ),
 
-    params: ($) => seq("(", repeat($.param), ")"),
+    params: ($) => seq("(", commaSep($.param), ")"),
     param: ($) => seq(field("name", $.ident), ":", field("type", $.type)),
 
     returns: ($) =>

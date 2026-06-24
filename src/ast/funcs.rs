@@ -17,27 +17,17 @@ pub struct Func {
     #[expect(dead_code)]
     loc: Loc,
     should_export: bool,
-    name: Ident,
-    params: Params,
-    returns: Returns,
+    sig: FuncSig,
     body: Block,
 }
 
 impl Func {
     pub fn from_grammar(src: Arc<NamedSource<String>>, func: nodes::Func<'_>) -> Self {
         let loc = Loc::new(src.clone(), func.raw());
-        let params = func.params().expect_matching();
-        let returns = func.returns().expect_matching();
-        let returns_loc = match returns {
-            Some(returns) => Loc::new(src.clone(), returns.raw()),
-            None => Loc::after(src.clone(), params.raw()),
-        };
         Self {
             loc,
             should_export: func.export().is_some(),
-            name: Ident::from_grammar(src.clone(), func.name().expect_matching()),
-            params: Params::from_grammar(src.clone(), params),
-            returns: Returns::from_grammar(src.clone(), returns_loc, returns),
+            sig: FuncSig::from_grammar(src.clone(), func.sig().expect_matching()),
             body: Block::from_grammar(src, func.body().expect_matching()),
         }
     }
@@ -46,19 +36,19 @@ impl Func {
         self.should_export
     }
 
-    pub fn func_type(&self) -> Result<FuncType> {
-        Ok(FuncType::new(self.params.types()?, self.returns.types()?))
+    pub fn sig(&self) -> &FuncSig {
+        &self.sig
     }
 
     pub fn emit_decl(&self, mod_env: &mut ModuleEnv) -> Result<()> {
-        mod_env.insert_function(self.name.clone(), self.clone())
+        mod_env.insert_function(self.sig.name.clone(), self.clone())
     }
 
     pub fn emit_impl(&self, mod_env: &mut ModuleEnv) -> Result<()> {
         // Set up a LocalEnv, and seed it with our parameters.
         let mut decls = DeclTable::new();
         let mut local_env = LocalEnv::new(&mut decls, mod_env.symbol_table());
-        self.params.declare(&mut local_env)?;
+        self.sig.params.declare(&mut local_env)?;
 
         let locals = vec![];
         let mut f = Function::new(locals);
@@ -67,6 +57,43 @@ impl Func {
         sink.end();
         mod_env.insert_code(&f);
         Ok(())
+    }
+}
+
+/// A function signature. This is shared between imported functions and locally
+/// defined functions.
+#[derive(Clone, Debug)]
+pub struct FuncSig {
+    #[expect(dead_code)]
+    loc: Loc,
+    name: Ident,
+    params: Params,
+    returns: Returns,
+}
+
+impl FuncSig {
+    pub fn from_grammar(src: Arc<NamedSource<String>>, sig: nodes::FuncSig<'_>) -> Self {
+        let loc = Loc::new(src.clone(), sig.raw());
+        let params = sig.params().expect_matching();
+        let returns = sig.returns().expect_matching();
+        let returns_loc = match returns {
+            Some(returns) => Loc::new(src.clone(), returns.raw()),
+            None => Loc::after(src.clone(), params.raw()),
+        };
+        Self {
+            loc,
+            name: Ident::from_grammar(src.clone(), sig.name().expect_matching()),
+            params: Params::from_grammar(src.clone(), params),
+            returns: Returns::from_grammar(src.clone(), returns_loc, returns),
+        }
+    }
+
+    pub fn name(&self) -> &Ident {
+        &self.name
+    }
+
+    pub fn func_type(&self) -> Result<FuncType> {
+        Ok(FuncType::new(self.params.types()?, self.returns.types()?))
     }
 }
 

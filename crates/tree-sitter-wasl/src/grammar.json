@@ -7,8 +7,70 @@
       "type": "REPEAT",
       "content": {
         "type": "SYMBOL",
-        "name": "func"
+        "name": "_top_level"
       }
+    },
+    "_top_level": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "import_block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "func"
+        }
+      ]
+    },
+    "import_block": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "import"
+        },
+        {
+          "type": "FIELD",
+          "name": "mod_name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "ident"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "{"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "import",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "import_func"
+                }
+              },
+              {
+                "type": "STRING",
+                "value": ";"
+              }
+            ]
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "}"
+        }
+      ]
+    },
+    "import_func": {
+      "type": "SYMBOL",
+      "name": "func_sig"
     },
     "func": {
       "type": "SEQ",
@@ -29,6 +91,27 @@
             ]
           }
         },
+        {
+          "type": "FIELD",
+          "name": "sig",
+          "content": {
+            "type": "SYMBOL",
+            "name": "func_sig"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "body",
+          "content": {
+            "type": "SYMBOL",
+            "name": "block"
+          }
+        }
+      ]
+    },
+    "func_sig": {
+      "type": "SEQ",
+      "members": [
         {
           "type": "STRING",
           "value": "func"
@@ -64,14 +147,6 @@
               "type": "BLANK"
             }
           ]
-        },
-        {
-          "type": "FIELD",
-          "name": "body",
-          "content": {
-            "type": "SYMBOL",
-            "name": "block"
-          }
         }
       ]
     },
@@ -83,11 +158,49 @@
           "value": "("
         },
         {
-          "type": "REPEAT",
-          "content": {
-            "type": "SYMBOL",
-            "name": "param"
-          }
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "param"
+                },
+                {
+                  "type": "REPEAT",
+                  "content": {
+                    "type": "SEQ",
+                    "members": [
+                      {
+                        "type": "STRING",
+                        "value": ","
+                      },
+                      {
+                        "type": "SYMBOL",
+                        "name": "param"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": ","
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         },
         {
           "type": "STRING",
@@ -478,6 +591,7 @@
   "externals": [],
   "inline": [],
   "supertypes": [
+    "_top_level",
     "_expr",
     "_atom"
   ],

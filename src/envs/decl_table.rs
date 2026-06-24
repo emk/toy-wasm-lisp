@@ -5,7 +5,7 @@ pub struct DeclTable<T> {
 }
 
 impl<T> DeclTable<T> {
-    /// Create a new [`DeclTableHandle`].
+    /// Create a new [`DeclTable`].
     pub fn new() -> Self {
         Self { decls: vec![] }
     }

@@ -7,7 +7,7 @@ use std::{
 
 use super::DeclIdx;
 use crate::{
-    ast::{Func, Ident, Local},
+    ast::{FuncSig, Ident, Local},
     errors::SymbolTableError,
 };
 
@@ -31,7 +31,10 @@ impl fmt::Display for SymbolCategory {
 #[derive(Clone, Debug)]
 pub enum Symbol {
     /// Module-level function declaration.
-    Func { idx: DeclIdx<Func>, func: Box<Func> },
+    Func {
+        idx: DeclIdx<FuncSig>,
+        func_sig: Box<FuncSig>,
+    },
     /// Local variable declaration (including function parameters).
     Local {
         idx: DeclIdx<Local>,
@@ -105,9 +108,9 @@ impl<'parent> SymbolTable<'parent> {
     pub fn get_func<'a>(
         &'a self,
         ident: &Ident,
-    ) -> Result<(DeclIdx<Func>, &'a Func), SymbolTableError> {
+    ) -> Result<(DeclIdx<FuncSig>, &'a FuncSig), SymbolTableError> {
         match self.get(ident)? {
-            Symbol::Func { idx, func } => Ok((*idx, func)),
+            Symbol::Func { idx, func_sig } => Ok((*idx, func_sig)),
             other => Err(SymbolTableError::wrong_symbol_category(
                 ident.to_owned(),
                 SymbolCategory::Func,

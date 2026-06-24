@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
-//use rust_sitter::errors::{ParseError as RustSitterParseError, ParseErrorReason};
 
 use crate::{ast::Ident, envs::SymbolCategory};
 
@@ -43,14 +42,13 @@ pub struct ParseErrors {
 }
 
 impl ParseErrors {
-    /// Construct a set of parse errors from source code and [`RustSitterParseError`]s. This
-    /// will filter out less interesting errors and truncate after a few errors.
+    /// Construct a set of parse errors from source code and errors.
     pub fn new(src: Arc<NamedSource<String>>, errs: Vec<ParseError>) -> Self {
         Self { src, errs }
     }
 }
 
-/// A [`SymbolTable`]-related error.
+/// A [`crate::envs::SymbolTable`]-related error.
 #[derive(thiserror::Error, Debug, Diagnostic)]
 pub enum SymbolTableError {
     #[error("unknown identifier: {ident}")]

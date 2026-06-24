@@ -3,9 +3,9 @@
 use std::sync::Arc;
 
 use miette::{NamedSource, Result, SourceSpan};
-use tracing::debug;
+use tracing::{debug, trace};
 use tree_sitter_wasl_types::nodes;
-use type_sitter::{Parser, raw};
+use type_sitter::{Node as _, Parser, raw};
 
 use crate::{
     ast::Mod,
@@ -16,7 +16,7 @@ use crate::{
 const MAX_PARSE_ERRORS: usize = 3;
 
 /// Parse `src`, using `
-pub fn parse(filename: &str, src: &str) -> Result<Mod> {
+pub fn parse(filename: &str, src: &str) -> Result<Mod, ParseErrors> {
     debug!(%filename, %src, "Parsing");
     let src = Arc::new(NamedSource::new(filename, src.to_owned()));
 
@@ -27,14 +27,16 @@ pub fn parse(filename: &str, src: &str) -> Result<Mod> {
         .expect("language not assigned to parser");
 
     let source_file = parsed.root_node().expect("expected source_file node");
+    if let Some(errs) = collect_errors(src.clone(), source_file.raw()) {
+        return Err(errs);
+    }
     let ast = Mod::from_grammar(src, source_file);
     Ok(ast)
 }
 
 /// Recursively walk the node tree, finding all errors.
-///
-/// TODO: Figure out if
-fn collect_errors(src: Arc<NamedSource<String>>, root: raw::Node<'_>) -> Option<ParseErrors> {
+fn collect_errors(src: Arc<NamedSource<String>>, root: &raw::Node<'_>) -> Option<ParseErrors> {
+    trace!(%root, "looking for errors");
     let mut out = vec![];
     let mut cursor = root.walk();
     let mut existing_error_count_stack = vec![];
@@ -76,10 +78,11 @@ fn collect_errors(src: Arc<NamedSource<String>>, root: raw::Node<'_>) -> Option<
             // We're finishing this node (one way or another). So if we haven't
             // output a decent error since we entered this level, add
             // _something_.
-            if out.len()
-                == existing_error_count_stack
-                    .pop()
-                    .expect("should always have stack entry here")
+            if node.has_error()
+                && out.len()
+                    == existing_error_count_stack
+                        .pop()
+                        .expect("should always have stack entry here")
             {
                 out.push(ParseError::new(source_span(node), "syntax error"));
             }
