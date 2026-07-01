@@ -1,0 +1,4 @@
+export func f() -> i32 {
+    g()
+    // ERROR: unknown identifier: g
+}

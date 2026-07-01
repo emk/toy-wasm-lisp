@@ -137,6 +137,10 @@ impl Params {
         self.params.len()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &Param> {
+        self.params.iter()
+    }
+
     fn wasm_types(&self) -> Result<Vec<WasmValType>> {
         Ok(self
             .params
@@ -175,6 +179,10 @@ impl Param {
         let local = Local::new(self.name.clone(), self.ty.clone());
         local_env.insert_local(self.name.clone(), local)?;
         Ok(())
+    }
+
+    pub fn ty(&self) -> &ValType {
+        &self.ty
     }
 }
 

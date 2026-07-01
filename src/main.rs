@@ -155,7 +155,9 @@ mod tests {
             } else if let Some(error_match) = caps.name("error") {
                 let expected_error = error_match.as_str();
                 match result {
-                    Ok(actual) => panic!("Expected error {expected_error:?}, got value {actual}"),
+                    Ok(actual) => panic!(
+                        "Expected error {expected_error:?}, got value {actual} in {path_str}"
+                    ),
                     Err(err) => assert!(
                         err.to_string().contains(expected_error),
                         "expected error {expected_error:?}, got error {err:?} in {path_str}"

@@ -62,6 +62,11 @@ impl InferExprType for Expr {
                     )
                     .into());
                 }
+                for (arg, param) in args.iter().zip(sig.params().iter()) {
+                    let arg_ty = arg.infer_expr_type(symbol_table)?;
+                    let param_ty = param.ty();
+                    arg_ty.expecting(&arg.loc, &ExprType::single(param_ty.to_owned()))?;
+                }
                 sig.returns().infer_expr_type(symbol_table)
             }
         }

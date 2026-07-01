@@ -1,0 +1,8 @@
+export func f() -> i32 {
+    0
+}
+
+export func f() -> i32 {
+    // ERROR: duplicate declaration: f
+    0
+}

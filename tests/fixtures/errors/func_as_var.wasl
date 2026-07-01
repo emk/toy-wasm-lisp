@@ -1,0 +1,8 @@
+func g() -> i32 {
+    0
+}
+
+export func f() -> i32 {
+    g
+    // ERROR: expected g to be a variable, but it was a function
+}

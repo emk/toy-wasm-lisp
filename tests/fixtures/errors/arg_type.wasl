@@ -1,0 +1,8 @@
+func g(x: u32) -> u32 {
+    x
+}
+
+export func f() -> u32 {
+    g(1)
+    // ERROR: expected type `u32`, but expression has type `i32`
+}
