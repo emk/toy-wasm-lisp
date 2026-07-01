@@ -12,9 +12,11 @@ sbcl --load watm-assembler.lisp --quit && \
     wasmtime -W gc runtime/watm/runtime.wasm
 ```
 
+This is largely abandoned and kept for reference and history.
+
 ## WASL: WebAssembly Systems Language
 
-An experiment at staying really close to the "metal" (lower-level than C). To run:
+An ongoing experiment at staying really close to the "metal" (lower-level than C). To run:
 
 ```sh
 env RUST_LOG=toy_wasm_lisp=debug,warn cargo run -- \
@@ -33,3 +35,11 @@ cargo build
 ```
 
 Then reload `rust-analyzer` so it notices the change.
+
+### Testing
+
+As usual:
+
+```sh
+cargo test
+```
