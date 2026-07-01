@@ -5,9 +5,11 @@ use std::{
     fmt,
 };
 
+use miette::Result;
+
 use super::DeclIdx;
 use crate::{
-    ast::{FuncSig, Ident, Local},
+    ast::{ExprType, FuncSig, Ident, InferExprType, Local},
     errors::SymbolTableError,
 };
 
@@ -28,6 +30,7 @@ impl fmt::Display for SymbolCategory {
     }
 }
 
+/// A symbol in our symbol table.
 #[derive(Clone, Debug)]
 pub enum Symbol {
     /// Module-level function declaration.
@@ -35,11 +38,8 @@ pub enum Symbol {
         idx: DeclIdx<FuncSig>,
         func_sig: Box<FuncSig>,
     },
-    /// Local variable declaration (including function parameters).
-    Local {
-        idx: DeclIdx<Local>,
-        local: Box<Local>,
-    },
+    /// A variable of some sort.
+    Var(VarSymbol),
 }
 
 impl Symbol {
@@ -47,7 +47,25 @@ impl Symbol {
     pub fn category(&self) -> SymbolCategory {
         match self {
             Symbol::Func { .. } => SymbolCategory::Func,
-            Symbol::Local { .. } => SymbolCategory::Var,
+            Symbol::Var(_) => SymbolCategory::Var,
+        }
+    }
+}
+
+/// A symbol which behaves like a variable.
+#[derive(Clone, Debug)]
+pub enum VarSymbol {
+    /// Local variable declaration (including function parameters).
+    Local {
+        idx: DeclIdx<Local>,
+        local: Box<Local>,
+    },
+}
+
+impl InferExprType for VarSymbol {
+    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
+        match self {
+            VarSymbol::Local { local, .. } => local.infer_expr_type(symbol_table),
         }
     }
 }
@@ -104,7 +122,7 @@ impl<'parent> SymbolTable<'parent> {
             .ok_or_else(|| SymbolTableError::unknown_identifier(ident.to_owned()))
     }
 
-    /// Get a function value.
+    /// Get a function symbol.
     pub fn get_func<'a>(
         &'a self,
         ident: &Ident,
@@ -116,6 +134,18 @@ impl<'parent> SymbolTable<'parent> {
                 SymbolCategory::Func,
                 other.category(),
             )),
+        }
+    }
+
+    /// Get a variable symbol.
+    pub fn get_var<'a>(&'a self, ident: &Ident) -> Result<&'a VarSymbol, SymbolTableError> {
+        match self.get(ident)? {
+            Symbol::Func { .. } => Err(SymbolTableError::wrong_symbol_category(
+                ident.to_owned(),
+                SymbolCategory::Var,
+                SymbolCategory::Func,
+            )),
+            Symbol::Var(var_symbol) => Ok(var_symbol),
         }
     }
 }
@@ -130,17 +160,17 @@ mod tests {
 
     fn local(idx: usize) -> Symbol {
         let idx = DeclIdx::new(idx);
-        let local = Local::new_i32_for_test("x");
-        Symbol::Local {
+        let local = Local::i32_for_test("x");
+        Symbol::Var(VarSymbol::Local {
             idx,
             local: Box::new(local),
-        }
+        })
     }
 
     fn idx(sym: &Symbol) -> u32 {
         match sym {
             Symbol::Func { idx, .. } => idx.try_as_u32().unwrap(),
-            Symbol::Local { idx, .. } => idx.try_as_u32().unwrap(),
+            Symbol::Var(VarSymbol::Local { idx, .. }) => idx.try_as_u32().unwrap(),
         }
     }
 

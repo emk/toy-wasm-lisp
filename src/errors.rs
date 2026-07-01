@@ -1,12 +1,11 @@
 //! Error types.
 
-use std::sync::Arc;
-
-use miette::{Diagnostic, NamedSource, SourceSpan};
+use miette::{Diagnostic, SourceSpan};
 
 use crate::{
-    ast::{ExprType, Ident, ValType},
+    ast::{ExprType, Ident},
     envs::SymbolCategory,
+    locs::Loc,
 };
 
 /// A parse error.
@@ -36,18 +35,14 @@ impl ParseError {
 #[derive(thiserror::Error, Debug, Diagnostic)]
 #[error("could not parse program")]
 pub struct ParseErrors {
-    // Source file containing the error.
-    #[source_code]
-    src: Arc<NamedSource<String>>,
-
     #[related]
     errs: Vec<ParseError>,
 }
 
 impl ParseErrors {
     /// Construct a set of parse errors from source code and errors.
-    pub fn new(src: Arc<NamedSource<String>>, errs: Vec<ParseError>) -> Self {
-        Self { src, errs }
+    pub fn new(errs: Vec<ParseError>) -> Self {
+        Self { errs }
     }
 }
 
@@ -58,10 +53,6 @@ pub enum SymbolTableError {
     UnknownIdentifier {
         ident: Ident,
 
-        /// Source file containing the error.
-        #[source_code]
-        src: Arc<NamedSource<String>>,
-
         /// Location of the error.
         #[label("unknown identifier")]
         span: SourceSpan,
@@ -71,21 +62,13 @@ pub enum SymbolTableError {
     DuplicateDeclaration {
         ident: Ident,
 
-        /// Source file containing the error.
-        #[source_code]
-        src: Arc<NamedSource<String>>,
-
         /// The new declaration that conflicts with the original.
         #[label(primary, "duplicate declaration")]
         span: SourceSpan,
 
         /// The original declaration we conflict with.
-        ///
-        /// Because [`miette`] only supports one source code per error (at least
-        /// without shenanigans), we will set this to `None` if it occurs in a
-        /// different file than `Self::duplicate_span`.
         #[label("original declaration")]
-        original_span: Option<SourceSpan>,
+        original_span: SourceSpan,
     },
 
     #[error("expected {ident} to be {expected_category}, but it was {found_category}")]
@@ -93,10 +76,6 @@ pub enum SymbolTableError {
         ident: Ident,
         expected_category: SymbolCategory,
         found_category: SymbolCategory,
-
-        /// Source file containing the error.
-        #[source_code]
-        src: Arc<NamedSource<String>>,
 
         /// The symbol that doesn't match.
         #[label(primary, "expected {expected_category}")]
@@ -106,22 +85,15 @@ pub enum SymbolTableError {
 
 impl SymbolTableError {
     pub fn unknown_identifier(ident: Ident) -> Self {
-        let src = ident.src();
         let span = ident.src_span();
-        Self::UnknownIdentifier { ident, src, span }
+        Self::UnknownIdentifier { ident, span }
     }
 
     pub fn duplicate_declaration(ident: Ident, original: Ident) -> Self {
-        let src = ident.src();
         let span = ident.src_span();
-        let original_span = if Arc::ptr_eq(&src, &original.src()) {
-            Some(original.src_span())
-        } else {
-            None
-        };
+        let original_span = original.src_span();
         Self::DuplicateDeclaration {
             ident,
-            src,
             span,
             original_span,
         }
@@ -132,13 +104,11 @@ impl SymbolTableError {
         expected_category: SymbolCategory,
         found_category: SymbolCategory,
     ) -> Self {
-        let src = ident.src();
         let span = ident.src_span();
         Self::WrongSymbolCategory {
             ident,
             expected_category,
             found_category,
-            src,
             span,
         }
     }
@@ -146,28 +116,69 @@ impl SymbolTableError {
 
 /// Type checking errors.
 #[derive(thiserror::Error, Debug, Diagnostic)]
-#[error("expected type `{expected}`, but expression has type `{found}`")]
-pub struct TypeCheckError {
-    expected: ValType,
-    found: ExprType,
+pub enum TypeCheckError {
+    #[error("expected type `{expected}`, but expression has type `{found}`")]
+    IncompatibleTypes {
+        expected: ExprType,
+        found: ExprType,
 
-    /// Source file containing the error.
-    #[source_code]
-    src: Arc<NamedSource<String>>,
+        /// Location of the error.
+        #[label("expected `{expected}`")]
+        span: SourceSpan,
+    },
 
-    /// Location of the error.
-    #[label("expected `{expected}")]
-    span: SourceSpan,
+    #[error("expected type `{right}` to match `{left}`")]
+    NotEqual {
+        left: ExprType,
+        right: ExprType,
+
+        #[label("mismatch here")]
+        span: SourceSpan,
+    },
+
+    #[error("expected numeric type, found `{found}`")]
+    NotNumeric {
+        found: ExprType,
+
+        #[label("found `{found}`")]
+        span: SourceSpan,
+    },
+
+    #[error("wrong number of arguments (expected {expected}, found {found})")]
+    WrongNumberOfArgs {
+        expected: usize,
+        found: usize,
+
+        #[label("expected {expected} arguments")]
+        span: SourceSpan,
+    },
 }
 
 impl TypeCheckError {
-    pub fn new(expected: ValType, found: ExprType) -> Self {
-        let src = expected.loc.src.clone();
-        let span = SourceSpan::from(expected.loc.span.clone());
-        Self {
+    pub fn not_expected(loc: &Loc, found: ExprType, expected: ExprType) -> Self {
+        let span = loc.src_span();
+        Self::IncompatibleTypes {
             expected,
             found,
-            src,
+            span,
+        }
+    }
+
+    pub fn not_equal(loc: &Loc, left: ExprType, right: ExprType) -> Self {
+        let span = loc.src_span();
+        Self::NotEqual { left, right, span }
+    }
+
+    pub fn not_numeric(loc: &Loc, found: ExprType) -> Self {
+        let span = loc.src_span();
+        Self::NotNumeric { found, span }
+    }
+
+    pub fn wrong_number_of_args(loc: &Loc, expected: usize, found: usize) -> Self {
+        let span = loc.src_span();
+        Self::WrongNumberOfArgs {
+            expected,
+            found,
             span,
         }
     }

@@ -65,7 +65,7 @@ impl ModuleEnv {
         name: &Ident,
         sig: &FuncSig,
     ) -> Result<(DeclIdx<IndexedType>, DeclIdx<FuncSig>)> {
-        let type_idx = self.find_or_insert_type(IndexedType::Func(sig.func_type()?));
+        let type_idx = self.find_or_insert_type(IndexedType::Func(sig.wasm_func_type()?));
         let idx = self.func_decls.insert(sig.clone());
         self.symbol_table.insert(
             name.clone(),

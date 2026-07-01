@@ -17,7 +17,7 @@ import wasi_snapshot_preview1 {
 }
 
 // EXPECT: f() == 0
-export func f() -> u32 {
+export func f() -> i32 {
     // TODO: Write data using fd_write.
     0
 }

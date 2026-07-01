@@ -1,7 +1,7 @@
-use std::{cmp::max, fmt, sync::Arc};
+use std::{cmp::max, fmt};
 
-use miette::NamedSource;
-use smallvec::SmallVec;
+use miette::Result;
+use smallvec::{SmallVec, smallvec};
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::ValType as WasmValType;
@@ -9,12 +9,25 @@ use wasm_encoder::ValType as WasmValType;
 use crate::{
     ast::{Ident, NodeResultExt},
     errors::TypeCheckError,
-    locs::Loc,
+    locs::{Loc, Source},
 };
 
 /// Check for a subtype relationship.
 pub trait IsSubtypeOf {
+    /// Can `self` be used anywhere that `other` can be used?
     fn is_subtype_of(&self, other: &Self) -> bool;
+
+    /// Are these two types equal?
+    fn type_eq(&self, other: &Self) -> bool {
+        self.is_subtype_of(other) && other.is_subtype_of(self)
+    }
+
+    /// Is this a numeric type that can be used with standard numeric
+    /// operations? This is used for operators like `+` and `*` in place of a
+    /// proper numeric subtype hierarchy.
+    fn is_numeric(&self) -> bool {
+        false
+    }
 }
 
 /// Convert to a native WASM-representable type.
@@ -45,7 +58,7 @@ pub struct PtrType {
 }
 
 impl PtrType {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: nodes::PtrType<'_>) -> Self {
+    pub fn from_grammar(src: &Source, ty: nodes::PtrType<'_>) -> Self {
         let is_mut = ty.r#mut().is_some();
         let is_nullable = ty.null().is_some();
         let storage_ty = Box::new(LinearStorageType::from_grammar(
@@ -103,8 +116,8 @@ pub struct LinearValType {
 }
 
 impl LinearValType {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: nodes::LinearValType<'_>) -> Self {
-        let loc = Loc::new(src.clone(), ty.raw());
+    pub fn from_grammar(src: &Source, ty: nodes::LinearValType<'_>) -> Self {
+        let loc = src.loc_for(ty.raw());
         let variant = match ty {
             nodes::LinearValType::I32(_) => LinearValTypeVariant::I32,
             nodes::LinearValType::U32(_) => LinearValTypeVariant::U32,
@@ -115,8 +128,15 @@ impl LinearValType {
         Self { loc, variant }
     }
 
+    pub fn i32(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: LinearValTypeVariant::I32,
+        }
+    }
+
     #[cfg(test)]
-    pub fn new_i32_for_test() -> Self {
+    pub fn i32_for_test() -> Self {
         Self {
             loc: Loc::new_for_test(),
             variant: LinearValTypeVariant::I32,
@@ -143,6 +163,13 @@ impl IsSubtypeOf for LinearValType {
             (LVTV::Ptr(ptr1), LVTV::Ptr(ptr2)) => ptr1.is_subtype_of(ptr2),
             _ => false,
         }
+    }
+
+    fn is_numeric(&self) -> bool {
+        matches!(
+            self.variant,
+            LinearValTypeVariant::I32 | LinearValTypeVariant::U32
+        )
     }
 }
 
@@ -180,8 +207,8 @@ pub struct LinearStorageType {
 }
 
 impl LinearStorageType {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: nodes::LinearStorageType<'_>) -> Self {
-        let loc = Loc::new(src.clone(), ty.raw());
+    pub fn from_grammar(src: &Source, ty: nodes::LinearStorageType<'_>) -> Self {
+        let loc = src.loc_for(ty.raw());
         let variant = match ty {
             nodes::LinearStorageType::I8(_) => LinearStorageTypeVariant::I8,
             nodes::LinearStorageType::U8(_) => LinearStorageTypeVariant::U8,
@@ -222,6 +249,13 @@ impl IsSubtypeOf for LinearStorageType {
             _ => false,
         }
     }
+
+    fn is_numeric(&self) -> bool {
+        matches!(
+            self.variant,
+            LinearStorageTypeVariant::I8 | LinearStorageTypeVariant::U8
+        )
+    }
 }
 
 impl LinearStorable for LinearStorageType {
@@ -242,14 +276,13 @@ pub struct LinearRecordType {
 }
 
 impl LinearRecordType {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: nodes::LinearRecordType<'_>) -> Self {
+    pub fn from_grammar(src: &Source, ty: nodes::LinearRecordType<'_>) -> Self {
         let mut rec = Self::empty();
         let mut c = ty.walk();
         for field in ty.fields(&mut c) {
             let field = field.expect_matching();
-            let name = Ident::from_grammar(src.clone(), field.name().expect_matching());
-            let field_ty =
-                LinearStorageType::from_grammar(src.clone(), field.r#type().expect_matching());
+            let name = Ident::from_grammar(src, field.name().expect_matching());
+            let field_ty = LinearStorageType::from_grammar(src, field.r#type().expect_matching());
             rec.add_field(name, field_ty);
         }
         rec
@@ -309,7 +342,7 @@ impl IsSubtypeOf for LinearRecordType {
         }
         for (field1, field2) in self.fields.iter().zip(other.fields.iter()) {
             // Field types are invariant for now.
-            if !field1.ty.is_subtype_of(&field2.ty) || !field2.ty.is_subtype_of(&field1.ty) {
+            if !field1.ty.type_eq(&field2.ty) {
                 return false;
             }
         }
@@ -332,6 +365,7 @@ pub struct LinearField {
     name: Ident,
     ty: Box<LinearStorageType>,
     /// Offset from start of record.
+    #[expect(dead_code)]
     offset: usize,
 }
 
@@ -355,13 +389,14 @@ pub enum ValTypeVariant {
 /// passed to functions and returned from functions.
 #[derive(Clone, Debug)]
 pub struct ValType {
+    #[expect(dead_code)]
     pub loc: Loc,
     variant: ValTypeVariant,
 }
 
 impl ValType {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ty: nodes::ValType<'_>) -> Self {
-        let loc = Loc::new(src.clone(), ty.raw());
+    pub fn from_grammar(src: &Source, ty: nodes::ValType<'_>) -> Self {
+        let loc = src.loc_for(ty.raw());
         let variant = match ty {
             nodes::ValType::LinearValType(ty) => {
                 ValTypeVariant::Linear(LinearValType::from_grammar(src, ty))
@@ -370,11 +405,18 @@ impl ValType {
         Self { loc, variant }
     }
 
+    pub fn i32(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: ValTypeVariant::Linear(LinearValType::i32(loc)),
+        }
+    }
+
     #[cfg(test)]
-    pub fn new_i32_for_test() -> Self {
+    pub fn i32_for_test() -> Self {
         Self {
             loc: Loc::new_for_test(),
-            variant: ValTypeVariant::Linear(LinearValType::new_i32_for_test()),
+            variant: ValTypeVariant::Linear(LinearValType::i32_for_test()),
         }
     }
 }
@@ -392,6 +434,12 @@ impl IsSubtypeOf for ValType {
         use ValTypeVariant as VTV;
         match (&self.variant, &other.variant) {
             (VTV::Linear(ty1), VTV::Linear(ty2)) => ty1.is_subtype_of(ty2),
+        }
+    }
+
+    fn is_numeric(&self) -> bool {
+        match &self.variant {
+            ValTypeVariant::Linear(ty) => ty.is_numeric(),
         }
     }
 }
@@ -415,11 +463,23 @@ pub struct ExprType {
 }
 
 impl ExprType {
-    fn expecting(&self, ty: &ValType) -> Result<(), TypeCheckError> {
-        if self.tys.len() == 1 && self.tys[0].is_subtype_of(ty) {
+    /// Construct a single type.
+    pub fn single(ty: ValType) -> Self {
+        Self { tys: smallvec![ty] }
+    }
+
+    // Construct a multiple-value type.
+    pub fn multiple(iter: impl Iterator<Item = ValType>) -> Self {
+        Self {
+            tys: SmallVec::from_iter(iter),
+        }
+    }
+
+    pub fn expecting(&self, loc: &Loc, expected: &ExprType) -> Result<()> {
+        if self.is_subtype_of(expected) {
             Ok(())
         } else {
-            Err(TypeCheckError::new(ty.clone(), self.clone()))
+            Err(TypeCheckError::not_expected(loc, self.clone(), expected.clone()).into())
         }
     }
 }
@@ -440,5 +500,20 @@ impl fmt::Display for ExprType {
                 write!(f, ")")
             }
         }
+    }
+}
+
+impl IsSubtypeOf for ExprType {
+    fn is_subtype_of(&self, other: &Self) -> bool {
+        self.tys.len() == other.tys.len()
+            && self
+                .tys
+                .iter()
+                .zip(other.tys.iter())
+                .all(|(a, b)| a.is_subtype_of(b))
+    }
+
+    fn is_numeric(&self) -> bool {
+        self.tys.len() == 1 && self.tys[0].is_numeric()
     }
 }

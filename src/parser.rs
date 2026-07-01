@@ -1,8 +1,6 @@
 // Parser based on [`rust_sitter`].
 
-use std::sync::Arc;
-
-use miette::{NamedSource, Result, SourceSpan};
+use miette::{Result, SourceSpan};
 use tracing::{debug, trace};
 use tree_sitter_wasl_types::nodes;
 use type_sitter::{Node as _, Parser, raw};
@@ -10,24 +8,24 @@ use type_sitter::{Node as _, Parser, raw};
 use crate::{
     ast::Mod,
     errors::{ParseError, ParseErrors},
+    locs::{Source, Sources},
 };
 
 /// If we collect this many parse errors, stop reporting more.
 const MAX_PARSE_ERRORS: usize = 3;
 
-/// Parse `src`, using `
-pub fn parse(filename: &str, src: &str) -> Result<Mod, ParseErrors> {
+/// Parse `src`.
+pub fn parse(srcs: &mut Sources, filename: &str, src: &str) -> Result<Mod, ParseErrors> {
     debug!(%filename, %src, "Parsing");
-    let src = Arc::new(NamedSource::new(filename, src.to_owned()));
-
+    let src = srcs.add_source(filename, src.to_owned());
     let mut parser = Parser::<nodes::SourceFile<'static>>::new(&tree_sitter_wasl::LANGUAGE.into())
         .expect("tree-sitter version mistmatch");
     let parsed = parser
-        .parse(src.as_ref().inner(), None)
+        .parse(src.text(), None)
         .expect("language not assigned to parser");
 
     let source_file = parsed.root_node().expect("expected source_file node");
-    if let Some(errs) = collect_errors(src.clone(), source_file.raw()) {
+    if let Some(errs) = collect_errors(src, source_file.raw()) {
         return Err(errs);
     }
     let ast = Mod::from_grammar(src, source_file);
@@ -35,7 +33,7 @@ pub fn parse(filename: &str, src: &str) -> Result<Mod, ParseErrors> {
 }
 
 /// Recursively walk the node tree, finding all errors.
-fn collect_errors(src: Arc<NamedSource<String>>, root: &raw::Node<'_>) -> Option<ParseErrors> {
+fn collect_errors(src: &Source, root: &raw::Node<'_>) -> Option<ParseErrors> {
     trace!(%root, "looking for errors");
     let mut out = vec![];
     let mut cursor = root.walk();
@@ -49,9 +47,9 @@ fn collect_errors(src: Arc<NamedSource<String>>, root: &raw::Node<'_>) -> Option
 
         // See if we have any kind of useful error here.
         if node.is_error() {
-            out.push(ParseError::new(source_span(node), "unexpected input"));
+            out.push(ParseError::new(source_span(src, &node), "unexpected input"));
         } else if node.is_missing() {
-            out.push(ParseError::new(source_span(node), "missing token"));
+            out.push(ParseError::new(source_span(src, &node), "missing token"));
         }
         if out.len() >= MAX_PARSE_ERRORS {
             break 'walk;
@@ -84,7 +82,7 @@ fn collect_errors(src: Arc<NamedSource<String>>, root: &raw::Node<'_>) -> Option
                         .pop()
                         .expect("should always have stack entry here")
             {
-                out.push(ParseError::new(source_span(node), "syntax error"));
+                out.push(ParseError::new(source_span(src, &node), "syntax error"));
             }
 
             // Try to go up.
@@ -100,12 +98,11 @@ fn collect_errors(src: Arc<NamedSource<String>>, root: &raw::Node<'_>) -> Option
     if out.is_empty() {
         return None;
     }
-    Some(ParseErrors::new(src, out))
+    Some(ParseErrors::new(out))
 }
 
-/// Get the span for a node.
-fn source_span(node: raw::Node<'_>) -> SourceSpan {
-    SourceSpan::from((node.start_byte(), node.end_byte()))
+fn source_span(src: &Source, node: &raw::Node<'_>) -> SourceSpan {
+    src.loc_for(node).src_span()
 }
 
 #[cfg(test)]
@@ -114,6 +111,7 @@ mod tests {
 
     #[test]
     fn successful_parses() {
-        parse("<test>", "func f() -> (i32) { 1 + 2 * 3 }").unwrap();
+        let mut sources = Sources::default();
+        parse(&mut sources, "<test>", "func f() -> (i32) { 1 + 2 * 3 }").unwrap();
     }
 }

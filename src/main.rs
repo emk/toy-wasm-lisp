@@ -13,7 +13,7 @@ use wasmtime_wasi::{
     p1::{self, WasiP1Ctx},
 };
 
-use crate::parser::parse;
+use crate::{locs::Sources, parser::parse};
 
 mod ast;
 mod envs;
@@ -33,7 +33,9 @@ fn main() -> Result<()> {
     debug!(?opt, "Options");
     let Opt::Run { path } = opt;
 
-    let (mut store, instance) = compile_and_instantiate(&path)?;
+    let mut sources = Sources::default();
+    let (mut store, instance) =
+        compile_and_instantiate(&mut sources, &path).map_err(|e| e.with_source_code(sources))?;
     let start = instance
         .get_typed_func::<(), (i32,)>(&mut store, "_start")
         .map_err(|e| miette!("{e}"))?;
@@ -58,12 +60,12 @@ fn init_tracing() {
 type MyState = WasiP1Ctx;
 
 /// Compile source code to WASM, and instantiate it.
-fn compile_and_instantiate(path: &Path) -> Result<(Store<MyState>, Instance)> {
+fn compile_and_instantiate(srcs: &mut Sources, path: &Path) -> Result<(Store<MyState>, Instance)> {
     let src = fs::read_to_string(path)
         .into_diagnostic()
         .with_context(|| format!("Failed to read input file: {}", path.display()))?;
 
-    let parsed = parse(&path.to_string_lossy(), &src)?;
+    let parsed = parse(srcs, &path.to_string_lossy(), &src)?;
     trace!(?parsed, "Parsed");
     let wasm = parsed.emit()?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;
@@ -116,7 +118,8 @@ mod tests {
     fn compile_and_run_test_programs() -> Result<()> {
         init_test_tracing();
 
-        let re = Regex::new(r"// EXPECT: f\(\) == (\d+)").expect("invalid regex");
+        let re = Regex::new(r"// (?:EXPECT: f\(\) == (?<expected>\d+)|ERROR: (?<error>.*))")
+            .expect("invalid regex");
         for entry in glob::glob("tests/fixtures/**/*.wasl")
             .into_diagnostic()
             .context("invalid glob pattern")?
@@ -128,19 +131,39 @@ mod tests {
 
             let Some(caps) = re.captures(&src) else {
                 return Err(miette!(
-                    "no recognizable 'EXPECT' comment in {}",
+                    "no recognizable 'EXPECT' or 'ERROR' comment in {}",
                     path.display()
                 ));
             };
-            let expected: i32 = caps[1]
-                .parse()
-                .into_diagnostic()
-                .with_context(|| miette!("invalid expected value in {}", path.display()))?;
 
-            let (mut store, instance) = compile_and_instantiate(&path)?;
-            let value = call_f(&mut store, &instance)?;
+            let mut sources = Sources::default();
+            let result = compile_and_instantiate(&mut sources, &path)
+                .map_err(|e| e.with_source_code(sources))
+                .and_then(|(mut store, instance)| call_f(&mut store, &instance));
 
-            assert_eq!(value, expected, "{}", path.display());
+            let path_str = path.display().to_string();
+            if let Some(expected_match) = caps.name("expected") {
+                let expected: i32 = expected_match
+                    .as_str()
+                    .parse()
+                    .into_diagnostic()
+                    .with_context(|| miette!("invalid expected value in {}", path.display()))?;
+                match result {
+                    Ok(actual) => assert_eq!(actual, expected, "{path_str}"),
+                    Err(err) => panic!("Expected {expected}, got error {err:?} in {path_str}"),
+                }
+            } else if let Some(error_match) = caps.name("error") {
+                let expected_error = error_match.as_str();
+                match result {
+                    Ok(actual) => panic!("Expected error {expected_error:?}, got value {actual}"),
+                    Err(err) => assert!(
+                        err.to_string().contains(expected_error),
+                        "expected error {expected_error:?}, got error {err:?} in {path_str}"
+                    ),
+                }
+            } else {
+                unreachable!("the regex should always match a branch");
+            }
         }
         Ok(())
     }

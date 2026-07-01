@@ -108,9 +108,9 @@ export default grammar({
         ")",
       ),
 
-    _atom: ($) => choice($.number, $.ident, $.parenExpr),
+    _atom: ($) => choice($.number, $.ident, $.paren_expr),
 
-    parenExpr: ($) => seq("(", field("expr", $._expr), ")"),
+    paren_expr: ($) => seq("(", field("expr", $._expr), ")"),
 
     _linear_val_type: ($) => choice("i32", "u32", $.ptr_type),
     _linear_storage_type: ($) =>

@@ -1,15 +1,13 @@
 //! Imports of external definitions appearing in a WASM program.
 
-use std::sync::Arc;
-
-use miette::{NamedSource, Result};
+use miette::Result;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 
 use crate::{
     ast::{NodeResultExt, funcs::FuncSig},
     envs::ModuleEnv,
-    locs::Loc,
+    locs::{Loc, Source},
 };
 
 use super::Ident;
@@ -24,13 +22,9 @@ pub struct Import {
 }
 
 impl Import {
-    pub fn from_grammar(
-        src: Arc<NamedSource<String>>,
-        mod_name: Ident,
-        import: nodes::ImportFunc<'_>,
-    ) -> Self {
-        let loc = Loc::new(src.clone(), import.raw());
-        let sig = FuncSig::from_grammar(src.clone(), import.func_sig().expect_matching());
+    pub fn from_grammar(src: &Source, mod_name: Ident, import: nodes::ImportFunc<'_>) -> Self {
+        let loc = src.loc_for(import.raw());
+        let sig = FuncSig::from_grammar(src, import.func_sig().expect_matching());
         Self { loc, mod_name, sig }
     }
 

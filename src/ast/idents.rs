@@ -1,15 +1,13 @@
 use std::{
     fmt,
     hash::{Hash, Hasher},
-    sync::Arc,
 };
 
-use miette::{NamedSource, SourceSpan};
+use miette::SourceSpan;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 
-use super::node_source;
-use crate::locs::Loc;
+use crate::locs::{Loc, Source};
 
 #[derive(Clone, Debug)]
 pub struct Ident {
@@ -18,11 +16,11 @@ pub struct Ident {
 }
 
 impl Ident {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, ident: nodes::Ident<'_>) -> Self {
-        let loc = Loc::new(src.clone(), ident.raw());
+    pub fn from_grammar(src: &Source, ident: nodes::Ident<'_>) -> Self {
+        let loc = src.loc_for(ident.raw());
         Ident {
             loc,
-            text: node_source(&src, ident.raw()).to_owned(),
+            text: src.node_text(ident.raw()).to_owned(),
         }
     }
 
@@ -38,12 +36,8 @@ impl Ident {
         &self.text
     }
 
-    pub fn src(&self) -> Arc<NamedSource<String>> {
-        self.loc.src.clone()
-    }
-
     pub fn src_span(&self) -> SourceSpan {
-        SourceSpan::from(self.loc.span.clone())
+        self.loc.src_span()
     }
 }
 

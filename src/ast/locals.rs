@@ -3,15 +3,17 @@
 use miette::Result;
 use wasm_encoder::InstructionSink;
 
-use super::{Ident, ValType};
-use crate::envs::DeclIdx;
+use super::{ExprType, Ident, ValType};
+use crate::{
+    ast::InferExprType,
+    envs::{DeclIdx, SymbolTable},
+};
 
 /// Local variable declaration.
 #[derive(Clone, Debug)]
 pub struct Local {
     #[expect(dead_code)]
     name: Ident,
-    #[expect(dead_code)]
     ty: ValType,
 }
 
@@ -21,15 +23,20 @@ impl Local {
     }
 
     #[cfg(test)]
-    pub fn new_i32_for_test(name: &str) -> Self {
+    pub fn i32_for_test(name: &str) -> Self {
         Self {
             name: Ident::new_for_test(name),
-            ty: ValType::new_i32_for_test(),
+            ty: ValType::i32_for_test(),
         }
     }
 
     pub fn emit_get(&self, idx: DeclIdx<Local>, sink: &mut InstructionSink) -> Result<()> {
         sink.local_get(idx.try_as_u32()?);
         Ok(())
+    }
+}
+impl InferExprType for Local {
+    fn infer_expr_type(&self, _symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
+        Ok(ExprType::single(self.ty.clone()))
     }
 }

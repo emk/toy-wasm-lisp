@@ -522,11 +522,11 @@
         },
         {
           "type": "SYMBOL",
-          "name": "parenExpr"
+          "name": "paren_expr"
         }
       ]
     },
-    "parenExpr": {
+    "paren_expr": {
       "type": "SEQ",
       "members": [
         {

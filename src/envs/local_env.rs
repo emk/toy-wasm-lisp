@@ -2,7 +2,7 @@
 
 use miette::Result;
 
-use super::{DeclTable, Symbol, SymbolTable};
+use super::{DeclTable, Symbol, SymbolTable, VarSymbol};
 use crate::{
     ast::{Ident, Local},
     errors::SymbolTableError,
@@ -36,10 +36,10 @@ impl<'parent> LocalEnv<'parent> {
 
     pub fn insert_local(&mut self, name: Ident, local: Local) -> Result<&Symbol, SymbolTableError> {
         let idx = self.decls.insert(local.clone());
-        let sym = Symbol::Local {
+        let sym = Symbol::Var(VarSymbol::Local {
             idx,
             local: Box::new(local),
-        };
+        });
         self.symbol_table.insert(name, sym)
     }
 

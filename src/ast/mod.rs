@@ -2,8 +2,8 @@
 //!
 //! These are what we use internally, instead of the the "AST" produced by the
 //! parser. Conversions are handled by various `TYPE::from_grammar` functions.
-use miette::NamedSource;
-use type_sitter::{NodeResult, raw};
+use miette::Result;
+use type_sitter::NodeResult;
 
 pub use self::{
     blocks::Block,
@@ -13,8 +13,9 @@ pub use self::{
     imports::Import,
     locals::Local,
     mods::Mod,
-    types::{ExprType, ValType},
+    types::{ExprType, ToWasmType, ValType},
 };
+use crate::envs::SymbolTable;
 
 mod blocks;
 mod exprs;
@@ -24,6 +25,11 @@ mod imports;
 mod locals;
 mod mods;
 mod types;
+
+/// Infer the type of an expression, performing any type checks as we go.
+pub trait InferExprType {
+    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType>;
+}
 
 /// Extension used to verify that our parse tree matches our grammar. This
 /// produces panics because if the grammar and parse tree don't match, something
@@ -50,11 +56,4 @@ impl<'tree, T> NodeResultExt for Option<NodeResult<'tree, T>> {
     fn expect_matching(self) -> Self::Unwrapped {
         self.map(|result| result.expect_matching())
     }
-}
-
-/// Expect UTF-8 text in parsed data. We require UTF-8 input, so this
-/// should always succeed.
-pub fn node_source<'src>(src: &'src NamedSource<String>, node: &raw::Node<'_>) -> &'src str {
-    node.utf8_text(src.inner().as_bytes())
-        .expect("should always be UTF-8")
 }

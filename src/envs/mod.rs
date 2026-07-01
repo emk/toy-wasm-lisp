@@ -9,7 +9,7 @@ pub use self::{
     decl_table::DeclTable,
     local_env::LocalEnv,
     module_env::ModuleEnv,
-    symbol_table::{Symbol, SymbolCategory, SymbolTable},
+    symbol_table::{Symbol, SymbolCategory, SymbolTable, VarSymbol},
     type_indexer::{IndexedType, TypeIndexer},
 };
 

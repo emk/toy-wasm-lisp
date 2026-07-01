@@ -1,15 +1,12 @@
-use std::sync::Arc;
-
-use miette::{NamedSource, Result};
+use miette::Result;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::{FuncType, Function, ValType as WasmValType};
 
-use super::{Block, Ident, ValType};
+use super::{Block, ExprType, Ident, InferExprType, Local, NodeResultExt, ToWasmType, ValType};
 use crate::{
-    ast::{Local, NodeResultExt, types::ToWasmType},
     envs::{DeclTable, LocalEnv, ModuleEnv},
-    locs::Loc,
+    locs::{Loc, Source},
 };
 
 #[derive(Clone, Debug)]
@@ -22,12 +19,12 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, func: nodes::Func<'_>) -> Self {
-        let loc = Loc::new(src.clone(), func.raw());
+    pub fn from_grammar(src: &Source, func: nodes::Func<'_>) -> Self {
+        let loc = src.loc_for(func.raw());
         Self {
             loc,
             should_export: func.export().is_some(),
-            sig: FuncSig::from_grammar(src.clone(), func.sig().expect_matching()),
+            sig: FuncSig::from_grammar(src, func.sig().expect_matching()),
             body: Block::from_grammar(src, func.body().expect_matching()),
         }
     }
@@ -49,6 +46,14 @@ impl Func {
         let mut decls = DeclTable::new();
         let mut local_env = LocalEnv::new(&mut decls, mod_env.symbol_table());
         self.sig.params.declare(&mut local_env)?;
+
+        // TODO: Redesign type inference.
+        let body_ty = self.body.infer_expr_type(local_env.symbol_table())?;
+        body_ty.expecting(
+            &self.body.loc,
+            // TODO: Use global symbol table for return value inference.
+            &self.sig.returns.infer_expr_type(mod_env.symbol_table())?,
+        )?;
 
         let locals = vec![];
         let mut f = Function::new(locals);
@@ -72,19 +77,19 @@ pub struct FuncSig {
 }
 
 impl FuncSig {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, sig: nodes::FuncSig<'_>) -> Self {
-        let loc = Loc::new(src.clone(), sig.raw());
+    pub fn from_grammar(src: &Source, sig: nodes::FuncSig<'_>) -> Self {
+        let loc = src.loc_for(sig.raw());
         let params = sig.params().expect_matching();
         let returns = sig.returns().expect_matching();
         let returns_loc = match returns {
-            Some(returns) => Loc::new(src.clone(), returns.raw()),
-            None => Loc::after(src.clone(), params.raw()),
+            Some(returns) => src.loc_for(returns.raw()),
+            None => src.loc_after(params.raw()),
         };
         Self {
             loc,
-            name: Ident::from_grammar(src.clone(), sig.name().expect_matching()),
-            params: Params::from_grammar(src.clone(), params),
-            returns: Returns::from_grammar(src.clone(), returns_loc, returns),
+            name: Ident::from_grammar(src, sig.name().expect_matching()),
+            params: Params::from_grammar(src, params),
+            returns: Returns::from_grammar(src, returns_loc, returns),
         }
     }
 
@@ -92,8 +97,19 @@ impl FuncSig {
         &self.name
     }
 
-    pub fn func_type(&self) -> Result<FuncType> {
-        Ok(FuncType::new(self.params.types()?, self.returns.types()?))
+    pub fn params(&self) -> &Params {
+        &self.params
+    }
+
+    pub fn returns(&self) -> &Returns {
+        &self.returns
+    }
+
+    pub fn wasm_func_type(&self) -> Result<FuncType> {
+        Ok(FuncType::new(
+            self.params.wasm_types()?,
+            self.returns.wasm_types()?,
+        ))
     }
 }
 
@@ -105,19 +121,23 @@ pub struct Params {
 }
 
 impl Params {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, params: nodes::Params<'_>) -> Self {
-        let loc = Loc::new(src.clone(), params.raw());
+    pub fn from_grammar(src: &Source, params: nodes::Params<'_>) -> Self {
+        let loc = src.loc_for(params.raw());
         let mut cursor = params.walk();
         Self {
             loc,
             params: params
                 .params(&mut cursor)
-                .map(|p| Param::from_grammar(src.clone(), p.expect_matching()))
+                .map(|p| Param::from_grammar(src, p.expect_matching()))
                 .collect::<Vec<_>>(),
         }
     }
 
-    fn types(&self) -> Result<Vec<WasmValType>> {
+    pub fn len(&self) -> usize {
+        self.params.len()
+    }
+
+    fn wasm_types(&self) -> Result<Vec<WasmValType>> {
         Ok(self
             .params
             .iter()
@@ -142,12 +162,12 @@ pub struct Param {
 }
 
 impl Param {
-    pub fn from_grammar(src: Arc<NamedSource<String>>, param: nodes::Param<'_>) -> Self {
-        let loc = Loc::new(src.clone(), param.raw());
+    pub fn from_grammar(src: &Source, param: nodes::Param<'_>) -> Self {
+        let loc = src.loc_for(param.raw());
         Self {
             loc,
-            name: Ident::from_grammar(src.clone(), param.name().expect_matching()),
-            ty: ValType::from_grammar(src.clone(), param.r#type().expect_matching()),
+            name: Ident::from_grammar(src, param.name().expect_matching()),
+            ty: ValType::from_grammar(src, param.r#type().expect_matching()),
         }
     }
 
@@ -155,6 +175,12 @@ impl Param {
         let local = Local::new(self.name.clone(), self.ty.clone());
         local_env.insert_local(self.name.clone(), local)?;
         Ok(())
+    }
+}
+
+impl InferExprType for Param {
+    fn infer_expr_type(&self, _symbol_table: &crate::envs::SymbolTable<'_>) -> Result<ExprType> {
+        Ok(ExprType::single(self.ty.clone()))
     }
 }
 
@@ -166,21 +192,17 @@ pub struct Returns {
 }
 
 impl Returns {
-    pub fn from_grammar(
-        src: Arc<NamedSource<String>>,
-        loc: Loc,
-        returns: Option<nodes::Returns<'_>>,
-    ) -> Self {
+    pub fn from_grammar(src: &Source, loc: Loc, returns: Option<nodes::Returns<'_>>) -> Self {
         let mut tys = vec![];
         match returns {
             None => {}
             Some(returns) => {
                 if let Some(ty) = returns.single() {
-                    tys.push(ValType::from_grammar(src.clone(), ty.expect_matching()));
+                    tys.push(ValType::from_grammar(src, ty.expect_matching()));
                 } else {
                     let mut c = returns.walk();
                     for ty in returns.multiples(&mut c) {
-                        tys.push(ValType::from_grammar(src.clone(), ty.expect_matching()));
+                        tys.push(ValType::from_grammar(src, ty.expect_matching()));
                     }
                 }
             }
@@ -188,11 +210,17 @@ impl Returns {
         Self { loc, tys }
     }
 
-    fn types(&self) -> Result<Vec<WasmValType>> {
+    fn wasm_types(&self) -> Result<Vec<WasmValType>> {
         Ok(self
             .tys
             .iter()
             .map(|ty| ty.to_wasm_type())
             .collect::<Vec<_>>())
+    }
+}
+
+impl InferExprType for Returns {
+    fn infer_expr_type(&self, _symbol_table: &crate::envs::SymbolTable<'_>) -> Result<ExprType> {
+        Ok(ExprType::multiple(self.tys.iter().cloned()))
     }
 }
