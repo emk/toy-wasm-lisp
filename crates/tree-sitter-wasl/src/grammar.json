@@ -739,8 +739,70 @@
       ]
     },
     "number": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "FIELD",
+          "name": "digits",
+          "content": {
+            "type": "SYMBOL",
+            "name": "digits"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "type",
+          "content": {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "_number_literal_type"
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "digits": {
       "type": "PATTERN",
-      "value": "\\d+"
+      "value": "-?\\d+"
+    },
+    "_number_literal_type": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "IMMEDIATE_TOKEN",
+          "content": {
+            "type": "STRING",
+            "value": "i8"
+          }
+        },
+        {
+          "type": "IMMEDIATE_TOKEN",
+          "content": {
+            "type": "STRING",
+            "value": "u8"
+          }
+        },
+        {
+          "type": "IMMEDIATE_TOKEN",
+          "content": {
+            "type": "STRING",
+            "value": "i32"
+          }
+        },
+        {
+          "type": "IMMEDIATE_TOKEN",
+          "content": {
+            "type": "STRING",
+            "value": "u32"
+          }
+        }
+      ]
     },
     "ident": {
       "type": "PATTERN",
@@ -783,7 +845,8 @@
     "_atom",
     "_linear_val_type",
     "_linear_storage_type",
-    "_val_type"
+    "_val_type",
+    "_number_literal_type"
   ],
   "reserved": {}
 }

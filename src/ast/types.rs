@@ -135,6 +135,13 @@ impl LinearValType {
         }
     }
 
+    pub fn u32(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: LinearValTypeVariant::U32,
+        }
+    }
+
     #[cfg(test)]
     pub fn i32_for_test() -> Self {
         Self {
@@ -409,6 +416,13 @@ impl ValType {
         Self {
             loc: loc.clone(),
             variant: ValTypeVariant::Linear(LinearValType::i32(loc)),
+        }
+    }
+
+    pub fn u32(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: ValTypeVariant::Linear(LinearValType::u32(loc)),
         }
     }
 

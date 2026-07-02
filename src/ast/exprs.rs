@@ -1,4 +1,4 @@
-use miette::{Result, miette};
+use miette::Result;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::InstructionSink;
@@ -36,7 +36,13 @@ impl Expr {
 impl InferExprType for Expr {
     fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
         match &self.variant {
-            ExprVariant::Number(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
+            ExprVariant::Number(n) => match n {
+                Number::I8(_) | Number::U8(_) => {
+                    unimplemented!("change type system for i8/u8 on stack")
+                }
+                Number::I32(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
+                Number::U32(_) => Ok(ExprType::single(ValType::u32(&self.loc))),
+            },
             ExprVariant::Add { expr1, expr2 } | ExprVariant::Mul { expr1, expr2 } => {
                 let ty1 = expr1.infer_expr_type(symbol_table)?;
                 let ty2 = expr2.infer_expr_type(symbol_table)?;
@@ -75,7 +81,7 @@ impl InferExprType for Expr {
 
 #[derive(Clone, Debug)]
 pub enum ExprVariant {
-    Number(i32),
+    Number(Number),
     Add { expr1: Box<Expr>, expr2: Box<Expr> },
     Mul { expr1: Box<Expr>, expr2: Box<Expr> },
     Var(Ident),
@@ -86,13 +92,7 @@ impl ExprVariant {
     fn from_grammar_atom(src: &Source, atom: nodes::Atom<'_>) -> Self {
         match atom {
             nodes::Atom::Ident(ident) => ExprVariant::Var(Ident::from_grammar(src, ident)),
-            nodes::Atom::Number(num) => ExprVariant::Number(
-                src.node_text(num.raw())
-                    .parse()
-                    // TODO: Huh, do we really need to thread error-handling through
-                    // the entire grammar conversion now? 🤦
-                    .expect("integer out of bounds"),
-            ),
+            nodes::Atom::Number(num) => ExprVariant::Number(Number::from_grammar(src, num)),
             nodes::Atom::ParenExpr(expr) => {
                 Expr::from_grammar(src, expr.expr().expect_matching()).variant
             }
@@ -129,8 +129,8 @@ impl ExprVariant {
 
     fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         match &self {
-            ExprVariant::Number(i) => {
-                sink.i32_const(*i);
+            ExprVariant::Number(n) => {
+                n.emit(env, sink)?;
             }
             ExprVariant::Add { expr1, expr2 } => {
                 expr1.emit(env, sink)?;
@@ -146,23 +146,7 @@ impl ExprVariant {
                 VarSymbol::Local { idx, local } => local.emit_get(*idx, sink)?,
             },
             ExprVariant::Call { func_name, args } => {
-                let (idx, func) = env.symbol_table().get_func(func_name)?;
-                let func_type = func.wasm_func_type()?;
-
-                // TODO: Actually set up type checking.
-                if func_type.params().len() != args.len() {
-                    return Err(miette!(
-                        "expected {} arguments, got {}",
-                        func_type.params().len(),
-                        args.len()
-                    ));
-                }
-                if func_type.results().len() != 1 {
-                    return Err(miette!(
-                        "expected 1 result, got {}",
-                        func_type.results().len()
-                    ));
-                }
+                let (idx, _func) = env.symbol_table().get_func(func_name)?;
 
                 // Emit args and call.
                 for arg in args {
@@ -171,6 +155,46 @@ impl ExprVariant {
                 sink.call(idx.try_as_u32()?);
             }
         }
+        Ok(())
+    }
+}
+
+/// A number literal.
+#[derive(Clone, Debug)]
+pub enum Number {
+    I8(i8),
+    U8(u8),
+    I32(i32),
+    U32(u32),
+}
+
+impl Number {
+    fn from_grammar(src: &Source, n: nodes::Number<'_>) -> Self {
+        let digits_str = src.node_text(n.digits().expect_matching().raw());
+        let ty = n.r#type().expect_matching();
+        // TODO: Thread error-handling through.
+        match ty {
+            Some(nodes::NumberLiteralType::I8(_)) => Number::I8(digits_str.parse().unwrap()),
+            Some(nodes::NumberLiteralType::U8(_)) => Number::U8(digits_str.parse().unwrap()),
+            Some(nodes::NumberLiteralType::I32(_)) | None => {
+                Number::I32(digits_str.parse().unwrap())
+            }
+            Some(nodes::NumberLiteralType::U32(_)) => Number::U32(digits_str.parse().unwrap()),
+        }
+    }
+
+    fn emit(&self, _env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
+        // WASM has far fewer numeric types than we do, so we need to convert to the
+        // canonical representations.
+        let i32_val = match self {
+            // Sign extend.
+            Number::I8(v) => i32::from(*v),
+            Number::U8(v) => i32::from(*v),
+            Number::I32(v) => *v,
+            // Reinterpret bits.
+            Number::U32(v) => v.cast_signed(),
+        };
+        sink.i32_const(i32_val);
         Ok(())
     }
 }

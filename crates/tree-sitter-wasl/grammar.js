@@ -29,6 +29,7 @@ export default grammar({
     $._linear_val_type,
     $._linear_storage_type,
     $._val_type,
+    $._number_literal_type,
   ],
 
   rules: {
@@ -129,7 +130,19 @@ export default grammar({
 
     _val_type: ($) => choice($._linear_val_type), // Will add ref types here.
 
-    number: ($) => /\d+/,
+    number: ($) =>
+      seq(
+        field("digits", $.digits),
+        field("type", optional($._number_literal_type)),
+      ),
+    digits: ($) => /-?\d+/,
+    _number_literal_type: ($) =>
+      choice(
+        token.immediate("i8"),
+        token.immediate("u8"),
+        token.immediate("i32"),
+        token.immediate("u32"),
+      ),
 
     ident: ($) => /[_a-zA-Z][_a-zA-Z0-9]*/,
 
