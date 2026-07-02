@@ -1,0 +1,4 @@
+// EXPECT: f() == 0
+export func f() -> u8 {
+    128u8 + 64u8 * 2u8
+}

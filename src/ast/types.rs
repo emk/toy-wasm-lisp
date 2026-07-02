@@ -4,7 +4,7 @@ use miette::Result;
 use smallvec::{SmallVec, smallvec};
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
-use wasm_encoder::ValType as WasmValType;
+use wasm_encoder::{InstructionSink, ValType as WasmValType};
 
 use crate::{
     ast::{FromGrammar, Ident, NodeResultExt},
@@ -103,13 +103,26 @@ impl IsSubtypeOf for PtrType {
     }
 }
 
+/// Types that can be used as "value" types (pushed to the managed stack, passed
+/// to and returned from managed functions, stored in locals and globals, etc).
+///
+/// In reality, any numeric type smaller than 32 bits will be represented as 32
+/// bits in many value contexts, and masking will be used to limit the number of
+/// bits.
+///
+/// Note that this does not include GC reference types, which cannot be stored
+/// in linear memory.
 #[derive(Clone, Debug)]
 pub enum LinearValTypeVariant {
+    I8,
+    U8,
     I32,
     U32,
     Ptr(Box<PtrType>),
 }
 
+/// Types that can be used as "value" types (pushed to the managed stack, etc.).
+/// See [`LinearValTypeVariant`] for details.
 #[derive(Clone, Debug)]
 pub struct LinearValType {
     #[expect(dead_code)]
@@ -118,6 +131,19 @@ pub struct LinearValType {
 }
 
 impl LinearValType {
+    pub fn i8(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: LinearValTypeVariant::I8,
+        }
+    }
+
+    pub fn u8(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: LinearValTypeVariant::U8,
+        }
+    }
     pub fn i32(loc: &Loc) -> Self {
         Self {
             loc: loc.clone(),
@@ -139,11 +165,35 @@ impl LinearValType {
             variant: LinearValTypeVariant::I32,
         }
     }
+
+    pub fn emit_mask(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        assert!(self.is_numeric());
+        match &self.variant {
+            LinearValTypeVariant::I8 => {
+                // Truncate and sign extend.
+                sink.i32_const(0xFF);
+                sink.i32_and();
+                sink.i32_extend8_s();
+            }
+            LinearValTypeVariant::U8 => {
+                // Truncate.
+                sink.i32_const(0xFF);
+                sink.i32_and();
+            }
+            LinearValTypeVariant::I32 | LinearValTypeVariant::U32 => {}
+            LinearValTypeVariant::Ptr(_) => {
+                unreachable!("pointer types are not currently numeric")
+            }
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Display for LinearValType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.variant {
+            LinearValTypeVariant::I8 => "i8".fmt(f),
+            LinearValTypeVariant::U8 => "u8".fmt(f),
             LinearValTypeVariant::I32 => "i32".fmt(f),
             LinearValTypeVariant::U32 => "u32".fmt(f),
             LinearValTypeVariant::Ptr(ptr_type) => write!(f, "{ptr_type}"),
@@ -157,6 +207,8 @@ impl FromGrammar for LinearValType {
     fn from_grammar(src: &Source, ty: nodes::LinearValType<'_>) -> Result<Self, ParseError> {
         let loc = src.loc_for(ty.raw());
         let variant = match ty {
+            nodes::LinearValType::I8(_) => LinearValTypeVariant::I8,
+            nodes::LinearValType::U8(_) => LinearValTypeVariant::U8,
             nodes::LinearValType::I32(_) => LinearValTypeVariant::I32,
             nodes::LinearValType::U32(_) => LinearValTypeVariant::U32,
             nodes::LinearValType::PtrType(ptr_type) => {
@@ -171,6 +223,8 @@ impl IsSubtypeOf for LinearValType {
     fn is_subtype_of(&self, other: &Self) -> bool {
         use LinearValTypeVariant as LVTV;
         match (&self.variant, &other.variant) {
+            (LVTV::I8, LVTV::I8) => true,
+            (LVTV::U8, LVTV::U8) => true,
             (LVTV::I32, LVTV::I32) => true,
             (LVTV::U32, LVTV::U32) => true,
             (LVTV::Ptr(ptr1), LVTV::Ptr(ptr2)) => ptr1.is_subtype_of(ptr2),
@@ -179,10 +233,15 @@ impl IsSubtypeOf for LinearValType {
     }
 
     fn is_numeric(&self) -> bool {
-        matches!(
-            self.variant,
-            LinearValTypeVariant::I32 | LinearValTypeVariant::U32
-        )
+        match &self.variant {
+            LinearValTypeVariant::I8
+            | LinearValTypeVariant::U8
+            | LinearValTypeVariant::I32
+            | LinearValTypeVariant::U32 => true,
+            // No pointer math at the current time. Needs further thought if we want to learn
+            // towards C or Rust or what in terms of language semantics.
+            LinearValTypeVariant::Ptr(_) => false,
+        }
     }
 }
 
@@ -197,6 +256,7 @@ impl ToWasmType for LinearValType {
 impl LinearStorable for LinearValType {
     fn size_of(&self) -> usize {
         match &self.variant {
+            LinearValTypeVariant::I8 | LinearValTypeVariant::U8 => 1,
             LinearValTypeVariant::I32
             | LinearValTypeVariant::U32
             | LinearValTypeVariant::Ptr { .. } => 4,
@@ -204,14 +264,15 @@ impl LinearStorable for LinearValType {
     }
 }
 
+/// Types which can be stored in linear memory. This includes [`LinearValType`] types, plus
+/// larger types which cannot be passed around by value.
 #[derive(Clone, Debug)]
 pub enum LinearStorageTypeVariant {
-    I8,
-    U8,
     LinearValType(Box<LinearValType>),
     LinearRecordType(Box<LinearRecordType>),
 }
 
+/// Types which can be stored in linear memory.
 #[derive(Clone, Debug)]
 pub struct LinearStorageType {
     #[expect(dead_code)]
@@ -222,8 +283,6 @@ pub struct LinearStorageType {
 impl fmt::Display for LinearStorageType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.variant {
-            LinearStorageTypeVariant::I8 => "i8".fmt(f),
-            LinearStorageTypeVariant::U8 => "u8".fmt(f),
             LinearStorageTypeVariant::LinearValType(ty) => write!(f, "{ty}"),
             LinearStorageTypeVariant::LinearRecordType(rec) => write!(f, "{rec}"),
         }
@@ -236,8 +295,6 @@ impl FromGrammar for LinearStorageType {
     fn from_grammar(src: &Source, ty: nodes::LinearStorageType<'_>) -> Result<Self, ParseError> {
         let loc = src.loc_for(ty.raw());
         let variant = match ty {
-            nodes::LinearStorageType::I8(_) => LinearStorageTypeVariant::I8,
-            nodes::LinearStorageType::U8(_) => LinearStorageTypeVariant::U8,
             nodes::LinearStorageType::LinearValType(ty) => LinearStorageTypeVariant::LinearValType(
                 Box::new(LinearValType::from_grammar(src, ty)?),
             ),
@@ -255,8 +312,6 @@ impl IsSubtypeOf for LinearStorageType {
     fn is_subtype_of(&self, other: &Self) -> bool {
         use LinearStorageTypeVariant as LSTV;
         match (&self.variant, &other.variant) {
-            (LSTV::I8, LSTV::I8) => true,
-            (LSTV::U8, LSTV::U8) => true,
             (LSTV::LinearValType(ty1), LSTV::LinearValType(ty2)) => ty1.is_subtype_of(ty2),
             (LSTV::LinearRecordType(rec1), LSTV::LinearRecordType(rec2)) => {
                 rec1.is_subtype_of(rec2)
@@ -266,17 +321,16 @@ impl IsSubtypeOf for LinearStorageType {
     }
 
     fn is_numeric(&self) -> bool {
-        matches!(
-            self.variant,
-            LinearStorageTypeVariant::I8 | LinearStorageTypeVariant::U8
-        )
+        match &self.variant {
+            LinearStorageTypeVariant::LinearValType(ty) => ty.is_numeric(),
+            LinearStorageTypeVariant::LinearRecordType(_) => false,
+        }
     }
 }
 
 impl LinearStorable for LinearStorageType {
     fn size_of(&self) -> usize {
         match &self.variant {
-            LinearStorageTypeVariant::I8 | LinearStorageTypeVariant::U8 => 2,
             LinearStorageTypeVariant::LinearValType(ty) => ty.size_of(),
             LinearStorageTypeVariant::LinearRecordType(rec) => rec.size_of(),
         }
@@ -414,6 +468,20 @@ pub struct ValType {
 }
 
 impl ValType {
+    pub fn i8(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: ValTypeVariant::Linear(LinearValType::i8(loc)),
+        }
+    }
+
+    pub fn u8(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: ValTypeVariant::Linear(LinearValType::u8(loc)),
+        }
+    }
+
     pub fn i32(loc: &Loc) -> Self {
         Self {
             loc: loc.clone(),
@@ -433,6 +501,14 @@ impl ValType {
         Self {
             loc: Loc::new_for_test(),
             variant: ValTypeVariant::Linear(LinearValType::i32_for_test()),
+        }
+    }
+
+    /// Emit a masking operation for this type.
+    pub fn emit_mask(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        assert!(self.is_numeric());
+        match &self.variant {
+            ValTypeVariant::Linear(ty) => ty.emit_mask(sink),
         }
     }
 }
@@ -505,12 +581,20 @@ impl ExprType {
         }
     }
 
+    /// Raise an error if this type is not a subtype of `expected`.
     pub fn expecting(&self, loc: &Loc, expected: &ExprType) -> Result<()> {
         if self.is_subtype_of(expected) {
             Ok(())
         } else {
             Err(TypeCheckError::not_expected(loc, self.clone(), expected.clone()).into())
         }
+    }
+
+    /// If this [`ExprType`] contains a single [`ValueType`], return it.
+    /// Otherwise panic.
+    pub fn expect_single(&self) -> &ValType {
+        assert_eq!(self.tys.len(), 1, "{self} should contain exactly one type");
+        &self.tys[0]
     }
 }
 

@@ -36,7 +36,7 @@ impl FromGrammar for Block {
 }
 
 impl InferExprType for Block {
-    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<super::ExprType> {
+    fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<super::ExprType> {
         self.expr.infer_expr_type(symbol_table)
     }
 }

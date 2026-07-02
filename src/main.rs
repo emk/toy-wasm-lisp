@@ -65,7 +65,7 @@ fn compile_and_instantiate(srcs: &mut Sources, path: &Path) -> Result<(Store<MyS
         .into_diagnostic()
         .with_context(|| format!("Failed to read input file: {}", path.display()))?;
 
-    let parsed = parse(srcs, &path.to_string_lossy(), &src)?;
+    let mut parsed = parse(srcs, &path.to_string_lossy(), &src)?;
     trace!(?parsed, "Parsed");
     let wasm = parsed.emit()?;
     let wat = wasmprinter::print_bytes(&wasm).map_err(|e| miette!("{e}"))?;
@@ -118,7 +118,7 @@ mod tests {
     fn compile_and_run_test_programs() -> Result<()> {
         init_test_tracing();
 
-        let re = Regex::new(r"// (?:EXPECT: f\(\) == (?<expected>\d+)|ERROR: (?<error>.*))")
+        let re = Regex::new(r"// (?:EXPECT: f\(\) == (?<expected>-?\d+)|ERROR: (?<error>.*))")
             .expect("invalid regex");
         for entry in glob::glob("tests/fixtures/**/*.wasl")
             .into_diagnostic()

@@ -7,7 +7,10 @@ use wasm_encoder::InstructionSink;
 
 use super::Ident;
 use crate::{
-    ast::{ExprType, FromGrammar, InferExprType, NodeResultExt, ValType, types::IsSubtypeOf as _},
+    ast::{
+        ExprType, FromGrammar, GetExprType as _, InferExprType, NodeResultExt, ValType,
+        types::IsSubtypeOf as _,
+    },
     envs::{LocalEnv, SymbolTable, VarSymbol},
     errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
@@ -40,16 +43,20 @@ impl FromGrammar for Expr {
 }
 
 impl InferExprType for Expr {
-    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
-        match &self.variant {
+    fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
+        match &mut self.variant {
             ExprVariant::Number(n) => match n {
-                Number::I8(_) | Number::U8(_) => {
-                    unimplemented!("change type system for i8/u8 on stack")
-                }
+                Number::I8(_) => Ok(ExprType::single(ValType::i8(&self.loc))),
+                Number::U8(_) => Ok(ExprType::single(ValType::u8(&self.loc))),
                 Number::I32(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
                 Number::U32(_) => Ok(ExprType::single(ValType::u32(&self.loc))),
             },
-            ExprVariant::Add { expr1, expr2 } | ExprVariant::Mul { expr1, expr2 } => {
+            ExprVariant::Binop {
+                ty,
+                op: _,
+                expr1,
+                expr2,
+            } => {
                 let ty1 = expr1.infer_expr_type(symbol_table)?;
                 let ty2 = expr2.infer_expr_type(symbol_table)?;
                 if !ty1.is_numeric() || !ty2.is_numeric() {
@@ -58,11 +65,12 @@ impl InferExprType for Expr {
                 if !ty1.type_eq(&ty2) {
                     return Err(TypeCheckError::not_equal(&self.loc, ty1, ty2).into());
                 }
+                *ty = Some(ty1.expect_single().clone());
                 Ok(ty1)
             }
             ExprVariant::Var(ident) => {
                 let sym = symbol_table.get_var(ident)?;
-                sym.infer_expr_type(symbol_table)
+                sym.expr_type()
             }
             ExprVariant::Call { func_name, args } => {
                 let (_idx, sig) = symbol_table.get_func(func_name)?;
@@ -74,12 +82,12 @@ impl InferExprType for Expr {
                     )
                     .into());
                 }
-                for (arg, param) in args.iter().zip(sig.params().iter()) {
+                for (arg, param) in args.iter_mut().zip(sig.params().iter()) {
                     let arg_ty = arg.infer_expr_type(symbol_table)?;
                     let param_ty = param.ty();
                     arg_ty.expecting(&arg.loc, &ExprType::single(param_ty.to_owned()))?;
                 }
-                sig.returns().infer_expr_type(symbol_table)
+                sig.returns().expr_type()
             }
         }
     }
@@ -88,10 +96,20 @@ impl InferExprType for Expr {
 #[derive(Clone, Debug)]
 pub enum ExprVariant {
     Number(Number),
-    Add { expr1: Box<Expr>, expr2: Box<Expr> },
-    Mul { expr1: Box<Expr>, expr2: Box<Expr> },
+    Binop {
+        /// Inferred operator type, for both arguments and return value. This
+        /// needs to be resolved to a [`ValType`] by this point, because we
+        /// don't support using multi-value expressions as arguments to binops.
+        ty: Option<ValType>,
+        op: Binop,
+        expr1: Box<Expr>,
+        expr2: Box<Expr>,
+    },
     Var(Ident),
-    Call { func_name: Ident, args: Vec<Expr> },
+    Call {
+        func_name: Ident,
+        args: Vec<Expr>,
+    },
 }
 
 impl ExprVariant {
@@ -108,18 +126,18 @@ impl ExprVariant {
     fn from_grammar_binop(src: &Source, binop: nodes::Binop<'_>) -> Result<Self, ParseError> {
         let expr1 = Expr::from_grammar(src, binop.left().expect_matching())?;
         let expr2 = Expr::from_grammar(src, binop.right().expect_matching())?;
-        let op = src.node_text(binop.op().expect_matching().raw());
-        match op {
-            "+" => Ok(ExprVariant::Add {
-                expr1: Box::new(expr1),
-                expr2: Box::new(expr2),
-            }),
-            "*" => Ok(ExprVariant::Mul {
-                expr1: Box::new(expr1),
-                expr2: Box::new(expr2),
-            }),
-            _ => panic!("grammar matched {op:?}, but it isn't implemented"),
-        }
+        let op_str = src.node_text(binop.op().expect_matching().raw());
+        let op = match op_str {
+            "+" => Binop::Add,
+            "*" => Binop::Mul,
+            _ => panic!("grammar matched {op_str:?}, but it isn't implemented"),
+        };
+        Ok(ExprVariant::Binop {
+            ty: None,
+            op,
+            expr1: Box::new(expr1),
+            expr2: Box::new(expr2),
+        })
     }
 
     fn from_grammar_call(src: &Source, call: nodes::Call<'_>) -> Result<Self, ParseError> {
@@ -138,15 +156,17 @@ impl ExprVariant {
             ExprVariant::Number(n) => {
                 n.emit(env, sink)?;
             }
-            ExprVariant::Add { expr1, expr2 } => {
+            ExprVariant::Binop {
+                ty,
+                op,
+                expr1,
+                expr2,
+            } => {
                 expr1.emit(env, sink)?;
                 expr2.emit(env, sink)?;
-                sink.i32_add();
-            }
-            ExprVariant::Mul { expr1, expr2 } => {
-                expr1.emit(env, sink)?;
-                expr2.emit(env, sink)?;
-                sink.i32_mul();
+                op.emit(env, sink)?;
+                let ty = ty.as_ref().expect("type inference should have been run");
+                ty.emit_mask(sink)?;
             }
             ExprVariant::Var(name) => match env.symbol_table().get_var(name)? {
                 VarSymbol::Local { idx, local } => local.emit_get(*idx, sink)?,
@@ -161,6 +181,23 @@ impl ExprVariant {
                 sink.call(idx.try_as_u32()?);
             }
         }
+        Ok(())
+    }
+}
+
+/// A binary operator.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Binop {
+    Add,
+    Mul,
+}
+
+impl Binop {
+    fn emit(&self, _env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
+        match self {
+            Binop::Add => sink.i32_add(),
+            Binop::Mul => sink.i32_mul(),
+        };
         Ok(())
     }
 }

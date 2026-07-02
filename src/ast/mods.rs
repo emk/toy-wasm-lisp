@@ -19,7 +19,11 @@ pub struct Mod {
 }
 
 impl Mod {
-    pub fn emit(&self) -> Result<Vec<u8>> {
+    /// Emit this module.
+    ///
+    /// Mutable because we need to run type inference and update type
+    /// information attached to certain nodes.
+    pub fn emit(&mut self) -> Result<Vec<u8>> {
         // Create our module-level environment, which contains
         // all the state needed to emit code.
         let mut module_env = ModuleEnv::new();
@@ -32,7 +36,7 @@ impl Mod {
         for f in &self.funcs {
             f.emit_decl(&mut module_env)?;
         }
-        for f in &self.funcs {
+        for f in &mut self.funcs {
             f.emit_impl(&mut module_env)?;
         }
         let module = module_env.build_module();

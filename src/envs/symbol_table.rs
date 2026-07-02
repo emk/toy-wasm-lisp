@@ -9,7 +9,7 @@ use miette::Result;
 
 use super::DeclIdx;
 use crate::{
-    ast::{ExprType, FuncSig, Ident, InferExprType, Local},
+    ast::{ExprType, FuncSig, GetExprType, Ident, Local},
     errors::SymbolTableError,
 };
 
@@ -62,10 +62,10 @@ pub enum VarSymbol {
     },
 }
 
-impl InferExprType for VarSymbol {
-    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
+impl GetExprType for VarSymbol {
+    fn expr_type(&self) -> Result<ExprType> {
         match self {
-            VarSymbol::Local { local, .. } => local.infer_expr_type(symbol_table),
+            VarSymbol::Local { local, .. } => local.expr_type(),
         }
     }
 }

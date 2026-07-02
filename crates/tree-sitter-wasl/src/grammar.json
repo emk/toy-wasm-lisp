@@ -552,6 +552,14 @@
       "members": [
         {
           "type": "STRING",
+          "value": "i8"
+        },
+        {
+          "type": "STRING",
+          "value": "u8"
+        },
+        {
+          "type": "STRING",
           "value": "i32"
         },
         {
@@ -567,14 +575,6 @@
     "_linear_storage_type": {
       "type": "CHOICE",
       "members": [
-        {
-          "type": "STRING",
-          "value": "i8"
-        },
-        {
-          "type": "STRING",
-          "value": "u8"
-        },
         {
           "type": "SYMBOL",
           "name": "_linear_val_type"

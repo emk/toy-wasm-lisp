@@ -1,0 +1,4 @@
+// EXPECT: f() == -2
+export func f() -> i8 {
+    -1i8 + -1i8
+}

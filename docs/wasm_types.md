@@ -60,3 +60,7 @@ Vectorized types (not currently relevant)
 ## WABI component types
 
 For eventual versions of WASI (post-0.3), [the goal](https://github.com/WebAssembly/component-model/issues/525) is apparently to keep WABI _independent_ of the difference between linear types and GC types, and provide a canonical transformation from the WASI components to either linear types or GC types. So this is not a 100% helpful and clarifying direction to look for our work, which currently attempts to support mixed linear and GC types.
+
+## Working with 8- and 16-bit types, u32, etc
+
+We actually represent these as i32, and perform masking and other fixes as needed.

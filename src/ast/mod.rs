@@ -36,8 +36,19 @@ pub trait FromGrammar: Sized {
 }
 
 /// Infer the type of an expression, performing any type checks as we go.
+///
+/// This may update the AST node with type information where needed for later
+/// passes.
 pub trait InferExprType {
-    fn infer_expr_type(&self, symbol_table: &SymbolTable<'_>) -> Result<ExprType>;
+    fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<ExprType>;
+}
+
+/// Get the type of an expression.
+///
+/// This does not perform any type inference or mutate the object. It is used to
+/// access the already-known types of things like resolved symbols.
+pub trait GetExprType {
+    fn expr_type(&self) -> Result<ExprType>;
 }
 
 /// Extension used to verify that our parse tree matches our grammar. This

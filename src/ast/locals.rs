@@ -4,10 +4,7 @@ use miette::Result;
 use wasm_encoder::InstructionSink;
 
 use super::{ExprType, Ident, ValType};
-use crate::{
-    ast::InferExprType,
-    envs::{DeclIdx, SymbolTable},
-};
+use crate::{ast::GetExprType, envs::DeclIdx};
 
 /// Local variable declaration.
 #[derive(Clone, Debug)]
@@ -35,8 +32,9 @@ impl Local {
         Ok(())
     }
 }
-impl InferExprType for Local {
-    fn infer_expr_type(&self, _symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
+
+impl GetExprType for Local {
+    fn expr_type(&self) -> Result<ExprType> {
         Ok(ExprType::single(self.ty.clone()))
     }
 }

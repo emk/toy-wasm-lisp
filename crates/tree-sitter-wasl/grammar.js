@@ -113,9 +113,9 @@ export default grammar({
 
     paren_expr: ($) => seq("(", field("expr", $._expr), ")"),
 
-    _linear_val_type: ($) => choice("i32", "u32", $.ptr_type),
+    _linear_val_type: ($) => choice("i8", "u8", "i32", "u32", $.ptr_type),
     _linear_storage_type: ($) =>
-      choice("i8", "u8", $._linear_val_type, $.linear_record_type),
+      choice($._linear_val_type, $.linear_record_type),
     ptr_type: ($) =>
       seq(
         "*",
