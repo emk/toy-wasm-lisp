@@ -7,8 +7,8 @@ use type_sitter::Node as _;
 use wasm_encoder::ValType as WasmValType;
 
 use crate::{
-    ast::{Ident, NodeResultExt},
-    errors::TypeCheckError,
+    ast::{FromGrammar, Ident, NodeResultExt},
+    errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
 };
 
@@ -57,22 +57,6 @@ pub struct PtrType {
     storage_ty: Box<LinearStorageType>,
 }
 
-impl PtrType {
-    pub fn from_grammar(src: &Source, ty: nodes::PtrType<'_>) -> Self {
-        let is_mut = ty.r#mut().is_some();
-        let is_nullable = ty.null().is_some();
-        let storage_ty = Box::new(LinearStorageType::from_grammar(
-            src,
-            ty.to_type().expect_matching(),
-        ));
-        Self {
-            is_mut,
-            is_nullable,
-            storage_ty,
-        }
-    }
-}
-
 impl fmt::Display for PtrType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "*")?;
@@ -83,6 +67,24 @@ impl fmt::Display for PtrType {
             write!(f, "null ")?;
         }
         write!(f, "{}", self.storage_ty)
+    }
+}
+
+impl FromGrammar for PtrType {
+    type Input<'a> = nodes::PtrType<'a>;
+
+    fn from_grammar(src: &Source, ty: nodes::PtrType<'_>) -> Result<Self, ParseError> {
+        let is_mut = ty.r#mut().is_some();
+        let is_nullable = ty.null().is_some();
+        let storage_ty = Box::new(LinearStorageType::from_grammar(
+            src,
+            ty.to_type().expect_matching(),
+        )?);
+        Ok(Self {
+            is_mut,
+            is_nullable,
+            storage_ty,
+        })
     }
 }
 
@@ -116,18 +118,6 @@ pub struct LinearValType {
 }
 
 impl LinearValType {
-    pub fn from_grammar(src: &Source, ty: nodes::LinearValType<'_>) -> Self {
-        let loc = src.loc_for(ty.raw());
-        let variant = match ty {
-            nodes::LinearValType::I32(_) => LinearValTypeVariant::I32,
-            nodes::LinearValType::U32(_) => LinearValTypeVariant::U32,
-            nodes::LinearValType::PtrType(ptr_type) => {
-                LinearValTypeVariant::Ptr(Box::new(PtrType::from_grammar(src, ptr_type)))
-            }
-        };
-        Self { loc, variant }
-    }
-
     pub fn i32(loc: &Loc) -> Self {
         Self {
             loc: loc.clone(),
@@ -158,6 +148,22 @@ impl fmt::Display for LinearValType {
             LinearValTypeVariant::U32 => "u32".fmt(f),
             LinearValTypeVariant::Ptr(ptr_type) => write!(f, "{ptr_type}"),
         }
+    }
+}
+
+impl FromGrammar for LinearValType {
+    type Input<'a> = nodes::LinearValType<'a>;
+
+    fn from_grammar(src: &Source, ty: nodes::LinearValType<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(ty.raw());
+        let variant = match ty {
+            nodes::LinearValType::I32(_) => LinearValTypeVariant::I32,
+            nodes::LinearValType::U32(_) => LinearValTypeVariant::U32,
+            nodes::LinearValType::PtrType(ptr_type) => {
+                LinearValTypeVariant::Ptr(Box::new(PtrType::from_grammar(src, ptr_type)?))
+            }
+        };
+        Ok(Self { loc, variant })
     }
 }
 
@@ -213,25 +219,6 @@ pub struct LinearStorageType {
     variant: LinearStorageTypeVariant,
 }
 
-impl LinearStorageType {
-    pub fn from_grammar(src: &Source, ty: nodes::LinearStorageType<'_>) -> Self {
-        let loc = src.loc_for(ty.raw());
-        let variant = match ty {
-            nodes::LinearStorageType::I8(_) => LinearStorageTypeVariant::I8,
-            nodes::LinearStorageType::U8(_) => LinearStorageTypeVariant::U8,
-            nodes::LinearStorageType::LinearValType(ty) => LinearStorageTypeVariant::LinearValType(
-                Box::new(LinearValType::from_grammar(src, ty)),
-            ),
-            nodes::LinearStorageType::LinearRecordType(ty) => {
-                LinearStorageTypeVariant::LinearRecordType(Box::new(
-                    LinearRecordType::from_grammar(src, ty),
-                ))
-            }
-        };
-        Self { loc, variant }
-    }
-}
-
 impl fmt::Display for LinearStorageType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.variant {
@@ -240,6 +227,27 @@ impl fmt::Display for LinearStorageType {
             LinearStorageTypeVariant::LinearValType(ty) => write!(f, "{ty}"),
             LinearStorageTypeVariant::LinearRecordType(rec) => write!(f, "{rec}"),
         }
+    }
+}
+
+impl FromGrammar for LinearStorageType {
+    type Input<'a> = nodes::LinearStorageType<'a>;
+
+    fn from_grammar(src: &Source, ty: nodes::LinearStorageType<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(ty.raw());
+        let variant = match ty {
+            nodes::LinearStorageType::I8(_) => LinearStorageTypeVariant::I8,
+            nodes::LinearStorageType::U8(_) => LinearStorageTypeVariant::U8,
+            nodes::LinearStorageType::LinearValType(ty) => LinearStorageTypeVariant::LinearValType(
+                Box::new(LinearValType::from_grammar(src, ty)?),
+            ),
+            nodes::LinearStorageType::LinearRecordType(ty) => {
+                LinearStorageTypeVariant::LinearRecordType(Box::new(
+                    LinearRecordType::from_grammar(src, ty)?,
+                ))
+            }
+        };
+        Ok(Self { loc, variant })
     }
 }
 
@@ -283,18 +291,6 @@ pub struct LinearRecordType {
 }
 
 impl LinearRecordType {
-    pub fn from_grammar(src: &Source, ty: nodes::LinearRecordType<'_>) -> Self {
-        let mut rec = Self::empty();
-        let mut c = ty.walk();
-        for field in ty.fields(&mut c) {
-            let field = field.expect_matching();
-            let name = Ident::from_grammar(src, field.name().expect_matching());
-            let field_ty = LinearStorageType::from_grammar(src, field.r#type().expect_matching());
-            rec.add_field(name, field_ty);
-        }
-        rec
-    }
-
     /// Create an empty record type. Fields may be added using [`Self::add_field`].
     fn empty() -> Self {
         Self {
@@ -339,6 +335,22 @@ impl fmt::Display for LinearRecordType {
             write!(f, "{}: {}", field.name, field.ty)?;
         }
         write!(f, " }}")
+    }
+}
+
+impl FromGrammar for LinearRecordType {
+    type Input<'a> = nodes::LinearRecordType<'a>;
+
+    fn from_grammar(src: &Source, ty: nodes::LinearRecordType<'_>) -> Result<Self, ParseError> {
+        let mut rec = Self::empty();
+        let mut c = ty.walk();
+        for field in ty.fields(&mut c) {
+            let field = field.expect_matching();
+            let name = Ident::from_grammar(src, field.name().expect_matching())?;
+            let field_ty = LinearStorageType::from_grammar(src, field.r#type().expect_matching())?;
+            rec.add_field(name, field_ty);
+        }
+        Ok(rec)
     }
 }
 
@@ -402,16 +414,6 @@ pub struct ValType {
 }
 
 impl ValType {
-    pub fn from_grammar(src: &Source, ty: nodes::ValType<'_>) -> Self {
-        let loc = src.loc_for(ty.raw());
-        let variant = match ty {
-            nodes::ValType::LinearValType(ty) => {
-                ValTypeVariant::Linear(LinearValType::from_grammar(src, ty))
-            }
-        };
-        Self { loc, variant }
-    }
-
     pub fn i32(loc: &Loc) -> Self {
         Self {
             loc: loc.clone(),
@@ -440,6 +442,20 @@ impl fmt::Display for ValType {
         match &self.variant {
             ValTypeVariant::Linear(ty) => write!(f, "{}", ty),
         }
+    }
+}
+
+impl FromGrammar for ValType {
+    type Input<'a> = nodes::ValType<'a>;
+
+    fn from_grammar(src: &Source, ty: nodes::ValType<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(ty.raw());
+        let variant = match ty {
+            nodes::ValType::LinearValType(ty) => {
+                ValTypeVariant::Linear(LinearValType::from_grammar(src, ty)?)
+            }
+        };
+        Ok(Self { loc, variant })
     }
 }
 

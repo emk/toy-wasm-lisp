@@ -1,0 +1,7 @@
+export func f() -> u32 {
+    -2u32
+    // ERROR: could not parse
+    //
+    // This is actually "u32 literal out of bounds: -2",
+    // but parse errors nest under a multiple error object.
+}

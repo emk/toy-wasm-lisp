@@ -6,7 +6,7 @@ use tree_sitter_wasl_types::nodes;
 use type_sitter::{Node as _, Parser, raw};
 
 use crate::{
-    ast::Mod,
+    ast::{FromGrammar as _, Mod},
     errors::{ParseError, ParseErrors},
     locs::{Source, Sources},
 };
@@ -28,7 +28,7 @@ pub fn parse(srcs: &mut Sources, filename: &str, src: &str) -> Result<Mod, Parse
     if let Some(errs) = collect_errors(src, source_file.raw()) {
         return Err(errs);
     }
-    let ast = Mod::from_grammar(src, source_file);
+    let ast = Mod::from_grammar(src, source_file).map_err(|e| ParseErrors::new(vec![e]))?;
     Ok(ast)
 }
 

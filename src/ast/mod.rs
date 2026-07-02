@@ -15,7 +15,7 @@ pub use self::{
     mods::Mod,
     types::{ExprType, ToWasmType, ValType},
 };
-use crate::envs::SymbolTable;
+use crate::{envs::SymbolTable, errors::ParseError, locs::Source};
 
 mod blocks;
 mod exprs;
@@ -25,6 +25,15 @@ mod imports;
 mod locals;
 mod mods;
 mod types;
+
+/// Convert a [`type_sitter`] parse tree node into an internal AST type.
+pub trait FromGrammar: Sized {
+    /// Our [`type_sitter`] input type.
+    type Input<'a>;
+
+    /// Convert `node` into our AST type. `src` is the current source file.
+    fn from_grammar(src: &Source, node: Self::Input<'_>) -> Result<Self, ParseError>;
+}
 
 /// Infer the type of an expression, performing any type checks as we go.
 pub trait InferExprType {

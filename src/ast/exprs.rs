@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use miette::Result;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
@@ -5,9 +7,9 @@ use wasm_encoder::InstructionSink;
 
 use super::Ident;
 use crate::{
-    ast::{ExprType, InferExprType, NodeResultExt, ValType, types::IsSubtypeOf as _},
+    ast::{ExprType, FromGrammar, InferExprType, NodeResultExt, ValType, types::IsSubtypeOf as _},
     envs::{LocalEnv, SymbolTable, VarSymbol},
-    errors::TypeCheckError,
+    errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
 };
 
@@ -18,18 +20,22 @@ pub struct Expr {
 }
 
 impl Expr {
-    pub fn from_grammar(src: &Source, expr: nodes::Expr<'_>) -> Self {
-        let loc = src.loc_for(expr.raw());
-        let variant = match expr {
-            nodes::Expr::Atom(atom) => ExprVariant::from_grammar_atom(src, atom),
-            nodes::Expr::Binop(binop) => ExprVariant::from_grammar_binop(src, binop),
-            nodes::Expr::Call(call) => ExprVariant::from_grammar_call(src, call),
-        };
-        Self { loc, variant }
-    }
-
     pub fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         self.variant.emit(env, sink)
+    }
+}
+
+impl FromGrammar for Expr {
+    type Input<'a> = nodes::Expr<'a>;
+
+    fn from_grammar(src: &Source, expr: nodes::Expr<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(expr.raw());
+        let variant = match expr {
+            nodes::Expr::Atom(atom) => ExprVariant::from_grammar_atom(src, atom)?,
+            nodes::Expr::Binop(binop) => ExprVariant::from_grammar_binop(src, binop)?,
+            nodes::Expr::Call(call) => ExprVariant::from_grammar_call(src, call)?,
+        };
+        Ok(Self { loc, variant })
     }
 }
 
@@ -89,42 +95,42 @@ pub enum ExprVariant {
 }
 
 impl ExprVariant {
-    fn from_grammar_atom(src: &Source, atom: nodes::Atom<'_>) -> Self {
+    fn from_grammar_atom(src: &Source, atom: nodes::Atom<'_>) -> Result<Self, ParseError> {
         match atom {
-            nodes::Atom::Ident(ident) => ExprVariant::Var(Ident::from_grammar(src, ident)),
-            nodes::Atom::Number(num) => ExprVariant::Number(Number::from_grammar(src, num)),
+            nodes::Atom::Ident(ident) => Ok(ExprVariant::Var(Ident::from_grammar(src, ident)?)),
+            nodes::Atom::Number(num) => Ok(ExprVariant::Number(Number::from_grammar(src, num)?)),
             nodes::Atom::ParenExpr(expr) => {
-                Expr::from_grammar(src, expr.expr().expect_matching()).variant
+                Ok(Expr::from_grammar(src, expr.expr().expect_matching())?.variant)
             }
         }
     }
 
-    fn from_grammar_binop(src: &Source, binop: nodes::Binop<'_>) -> Self {
-        let expr1 = Expr::from_grammar(src, binop.left().expect_matching());
-        let expr2 = Expr::from_grammar(src, binop.right().expect_matching());
+    fn from_grammar_binop(src: &Source, binop: nodes::Binop<'_>) -> Result<Self, ParseError> {
+        let expr1 = Expr::from_grammar(src, binop.left().expect_matching())?;
+        let expr2 = Expr::from_grammar(src, binop.right().expect_matching())?;
         let op = src.node_text(binop.op().expect_matching().raw());
         match op {
-            "+" => ExprVariant::Add {
+            "+" => Ok(ExprVariant::Add {
                 expr1: Box::new(expr1),
                 expr2: Box::new(expr2),
-            },
-            "*" => ExprVariant::Mul {
+            }),
+            "*" => Ok(ExprVariant::Mul {
                 expr1: Box::new(expr1),
                 expr2: Box::new(expr2),
-            },
+            }),
             _ => panic!("grammar matched {op:?}, but it isn't implemented"),
         }
     }
 
-    fn from_grammar_call(src: &Source, call: nodes::Call<'_>) -> Self {
-        let func_name = Ident::from_grammar(src, call.func().expect_matching());
+    fn from_grammar_call(src: &Source, call: nodes::Call<'_>) -> Result<Self, ParseError> {
+        let func_name = Ident::from_grammar(src, call.func().expect_matching())?;
         let mut args = vec![];
         let mut c = call.walk();
         for arg in call.args(&mut c) {
             let arg = arg.expect_matching();
-            args.push(Expr::from_grammar(src, arg));
+            args.push(Expr::from_grammar(src, arg)?);
         }
-        ExprVariant::Call { func_name, args }
+        Ok(ExprVariant::Call { func_name, args })
     }
 
     fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
@@ -169,20 +175,6 @@ pub enum Number {
 }
 
 impl Number {
-    fn from_grammar(src: &Source, n: nodes::Number<'_>) -> Self {
-        let digits_str = src.node_text(n.digits().expect_matching().raw());
-        let ty = n.r#type().expect_matching();
-        // TODO: Thread error-handling through.
-        match ty {
-            Some(nodes::NumberLiteralType::I8(_)) => Number::I8(digits_str.parse().unwrap()),
-            Some(nodes::NumberLiteralType::U8(_)) => Number::U8(digits_str.parse().unwrap()),
-            Some(nodes::NumberLiteralType::I32(_)) | None => {
-                Number::I32(digits_str.parse().unwrap())
-            }
-            Some(nodes::NumberLiteralType::U32(_)) => Number::U32(digits_str.parse().unwrap()),
-        }
-    }
-
     fn emit(&self, _env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         // WASM has far fewer numeric types than we do, so we need to convert to the
         // canonical representations.
@@ -196,5 +188,41 @@ impl Number {
         };
         sink.i32_const(i32_val);
         Ok(())
+    }
+}
+
+impl FromGrammar for Number {
+    type Input<'a> = nodes::Number<'a>;
+
+    fn from_grammar(src: &Source, n: nodes::Number<'_>) -> Result<Self, ParseError> {
+        let digits_str = src.node_text(n.digits().expect_matching().raw());
+        let ty = n.r#type().expect_matching();
+        let loc = src.loc_for(n.raw());
+        match ty {
+            Some(nodes::NumberLiteralType::I8(_)) => {
+                Ok(Number::I8(parse_number(loc, "i8", digits_str)?))
+            }
+            Some(nodes::NumberLiteralType::U8(_)) => {
+                Ok(Number::U8(parse_number(loc, "u8", digits_str)?))
+            }
+            // Default type to i32.
+            Some(nodes::NumberLiteralType::I32(_)) | None => {
+                Ok(Number::I32(parse_number(loc, "i32", digits_str)?))
+            }
+            Some(nodes::NumberLiteralType::U32(_)) => {
+                Ok(Number::U32(parse_number(loc, "u32", digits_str)?))
+            }
+        }
+    }
+}
+
+/// Parse a number literal, returning an appropriate error if necessary.
+fn parse_number<T: FromStr>(loc: Loc, type_str: &str, text: &str) -> Result<T, ParseError> {
+    match text.parse::<T>() {
+        Ok(val) => Ok(val),
+        Err(_) => Err(ParseError::new(
+            loc.span,
+            format!("{} literal out of bounds: {}", type_str, text),
+        )),
     }
 }
