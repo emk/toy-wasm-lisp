@@ -25,13 +25,10 @@ env RUST_LOG=toy_wasm_lisp=debug,warn cargo run -- \
 
 ### Force rebuilding the grammar (fish shell)
 
-Something like this:
+You can build everything using `just`, if it's installed:
 
 ```sh
-pushd crates/tree-sitter-wasl/; \
-tree-sitter generate; \
-popd; \
-cargo build
+just build
 ```
 
 Then reload `rust-analyzer` so it notices the change.
@@ -43,3 +40,5 @@ As usual:
 ```sh
 cargo test
 ```
+
+This includes quite a few test programs, both ones expected to return a value, and ones expected to fail with an error.

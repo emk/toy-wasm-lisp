@@ -514,7 +514,7 @@
       "members": [
         {
           "type": "SYMBOL",
-          "name": "number"
+          "name": "_literal"
         },
         {
           "type": "SYMBOL",
@@ -565,6 +565,10 @@
         {
           "type": "STRING",
           "value": "u32"
+        },
+        {
+          "type": "STRING",
+          "value": "bool"
         },
         {
           "type": "SYMBOL",
@@ -738,6 +742,19 @@
         }
       ]
     },
+    "_literal": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "number"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_bool"
+        }
+      ]
+    },
     "number": {
       "type": "SEQ",
       "members": [
@@ -804,6 +821,19 @@
         }
       ]
     },
+    "_bool": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "true"
+        },
+        {
+          "type": "STRING",
+          "value": "false"
+        }
+      ]
+    },
     "ident": {
       "type": "PATTERN",
       "value": "[_a-zA-Z][_a-zA-Z0-9]*"
@@ -846,7 +876,9 @@
     "_linear_val_type",
     "_linear_storage_type",
     "_val_type",
-    "_number_literal_type"
+    "_literal",
+    "_number_literal_type",
+    "_bool"
   ],
   "reserved": {}
 }

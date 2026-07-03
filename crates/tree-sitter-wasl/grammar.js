@@ -29,7 +29,9 @@ export default grammar({
     $._linear_val_type,
     $._linear_storage_type,
     $._val_type,
+    $._literal,
     $._number_literal_type,
+    $._bool,
   ],
 
   rules: {
@@ -109,11 +111,12 @@ export default grammar({
         ")",
       ),
 
-    _atom: ($) => choice($.number, $.ident, $.paren_expr),
+    _atom: ($) => choice($._literal, $.ident, $.paren_expr),
 
     paren_expr: ($) => seq("(", field("expr", $._expr), ")"),
 
-    _linear_val_type: ($) => choice("i8", "u8", "i32", "u32", $.ptr_type),
+    _linear_val_type: ($) =>
+      choice("i8", "u8", "i32", "u32", "bool", $.ptr_type),
     _linear_storage_type: ($) =>
       choice($._linear_val_type, $.linear_record_type),
     ptr_type: ($) =>
@@ -130,6 +133,8 @@ export default grammar({
 
     _val_type: ($) => choice($._linear_val_type), // Will add ref types here.
 
+    _literal: ($) => choice($.number, $._bool),
+
     number: ($) =>
       seq(
         field("digits", $.digits),
@@ -143,6 +148,8 @@ export default grammar({
         token.immediate("i32"),
         token.immediate("u32"),
       ),
+
+    _bool: ($) => choice("true", "false"),
 
     ident: ($) => /[_a-zA-Z][_a-zA-Z0-9]*/,
 

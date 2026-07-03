@@ -118,6 +118,7 @@ pub enum LinearValTypeVariant {
     U8,
     I32,
     U32,
+    Bool,
     Ptr(Box<PtrType>),
 }
 
@@ -158,6 +159,13 @@ impl LinearValType {
         }
     }
 
+    pub fn bool(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: LinearValTypeVariant::Bool,
+        }
+    }
+
     #[cfg(test)]
     pub fn i32_for_test() -> Self {
         Self {
@@ -181,6 +189,9 @@ impl LinearValType {
                 sink.i32_and();
             }
             LinearValTypeVariant::I32 | LinearValTypeVariant::U32 => {}
+            LinearValTypeVariant::Bool => {
+                unreachable!("{self} is not a numeric type")
+            }
             LinearValTypeVariant::Ptr(_) => {
                 unreachable!("pointer types are not currently numeric")
             }
@@ -196,6 +207,7 @@ impl fmt::Display for LinearValType {
             LinearValTypeVariant::U8 => "u8".fmt(f),
             LinearValTypeVariant::I32 => "i32".fmt(f),
             LinearValTypeVariant::U32 => "u32".fmt(f),
+            LinearValTypeVariant::Bool => "bool".fmt(f),
             LinearValTypeVariant::Ptr(ptr_type) => write!(f, "{ptr_type}"),
         }
     }
@@ -211,6 +223,7 @@ impl FromGrammar for LinearValType {
             nodes::LinearValType::U8(_) => LinearValTypeVariant::U8,
             nodes::LinearValType::I32(_) => LinearValTypeVariant::I32,
             nodes::LinearValType::U32(_) => LinearValTypeVariant::U32,
+            nodes::LinearValType::Bool(_) => LinearValTypeVariant::Bool,
             nodes::LinearValType::PtrType(ptr_type) => {
                 LinearValTypeVariant::Ptr(Box::new(PtrType::from_grammar(src, ptr_type)?))
             }
@@ -227,6 +240,7 @@ impl IsSubtypeOf for LinearValType {
             (LVTV::U8, LVTV::U8) => true,
             (LVTV::I32, LVTV::I32) => true,
             (LVTV::U32, LVTV::U32) => true,
+            (LVTV::Bool, LVTV::Bool) => true,
             (LVTV::Ptr(ptr1), LVTV::Ptr(ptr2)) => ptr1.is_subtype_of(ptr2),
             _ => false,
         }
@@ -238,6 +252,7 @@ impl IsSubtypeOf for LinearValType {
             | LinearValTypeVariant::U8
             | LinearValTypeVariant::I32
             | LinearValTypeVariant::U32 => true,
+            LinearValTypeVariant::Bool => false,
             // No pointer math at the current time. Needs further thought if we want to learn
             // towards C or Rust or what in terms of language semantics.
             LinearValTypeVariant::Ptr(_) => false,
@@ -256,7 +271,7 @@ impl ToWasmType for LinearValType {
 impl LinearStorable for LinearValType {
     fn size_of(&self) -> usize {
         match &self.variant {
-            LinearValTypeVariant::I8 | LinearValTypeVariant::U8 => 1,
+            LinearValTypeVariant::I8 | LinearValTypeVariant::U8 | LinearValTypeVariant::Bool => 1,
             LinearValTypeVariant::I32
             | LinearValTypeVariant::U32
             | LinearValTypeVariant::Ptr { .. } => 4,
@@ -493,6 +508,13 @@ impl ValType {
         Self {
             loc: loc.clone(),
             variant: ValTypeVariant::Linear(LinearValType::u32(loc)),
+        }
+    }
+
+    pub fn bool(loc: &Loc) -> Self {
+        Self {
+            loc: loc.clone(),
+            variant: ValTypeVariant::Linear(LinearValType::bool(loc)),
         }
     }
 

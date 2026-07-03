@@ -8,7 +8,7 @@ use wasm_encoder::InstructionSink;
 use super::Ident;
 use crate::{
     ast::{
-        ExprType, FromGrammar, GetExprType as _, InferExprType, NodeResultExt, ValType,
+        ExprType, FromGrammar, GetExprType, InferExprType, NodeResultExt, ValType,
         types::IsSubtypeOf as _,
     },
     envs::{LocalEnv, SymbolTable, VarSymbol},
@@ -45,11 +45,14 @@ impl FromGrammar for Expr {
 impl InferExprType for Expr {
     fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
         match &mut self.variant {
-            ExprVariant::Number(n) => match n {
-                Number::I8(_) => Ok(ExprType::single(ValType::i8(&self.loc))),
-                Number::U8(_) => Ok(ExprType::single(ValType::u8(&self.loc))),
-                Number::I32(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
-                Number::U32(_) => Ok(ExprType::single(ValType::u32(&self.loc))),
+            ExprVariant::Literal(lit) => match lit {
+                Literal::Number(n) => match n {
+                    Number::I8(_) => Ok(ExprType::single(ValType::i8(&self.loc))),
+                    Number::U8(_) => Ok(ExprType::single(ValType::u8(&self.loc))),
+                    Number::I32(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
+                    Number::U32(_) => Ok(ExprType::single(ValType::u32(&self.loc))),
+                },
+                Literal::Bool(_) => Ok(ExprType::single(ValType::bool(&self.loc))),
             },
             ExprVariant::Binop {
                 ty,
@@ -95,7 +98,7 @@ impl InferExprType for Expr {
 
 #[derive(Clone, Debug)]
 pub enum ExprVariant {
-    Number(Number),
+    Literal(Literal),
     Binop {
         /// Inferred operator type, for both arguments and return value. This
         /// needs to be resolved to a [`ValType`] by this point, because we
@@ -116,7 +119,7 @@ impl ExprVariant {
     fn from_grammar_atom(src: &Source, atom: nodes::Atom<'_>) -> Result<Self, ParseError> {
         match atom {
             nodes::Atom::Ident(ident) => Ok(ExprVariant::Var(Ident::from_grammar(src, ident)?)),
-            nodes::Atom::Number(num) => Ok(ExprVariant::Number(Number::from_grammar(src, num)?)),
+            nodes::Atom::Literal(lit) => Ok(ExprVariant::Literal(Literal::from_grammar(src, lit)?)),
             nodes::Atom::ParenExpr(expr) => {
                 Ok(Expr::from_grammar(src, expr.expr().expect_matching())?.variant)
             }
@@ -153,8 +156,8 @@ impl ExprVariant {
 
     fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
         match &self {
-            ExprVariant::Number(n) => {
-                n.emit(env, sink)?;
+            ExprVariant::Literal(lit) => {
+                lit.emit(env, sink)?;
             }
             ExprVariant::Binop {
                 ty,
@@ -199,6 +202,37 @@ impl Binop {
             Binop::Mul => sink.i32_mul(),
         };
         Ok(())
+    }
+}
+
+/// A literal value.
+#[derive(Clone, Debug)]
+pub enum Literal {
+    Number(Number),
+    Bool(bool),
+}
+
+impl Literal {
+    fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
+        match &self {
+            Literal::Number(n) => n.emit(env, sink)?,
+            Literal::Bool(b) => {
+                sink.i32_const(if *b { 1 } else { 0 });
+            }
+        }
+        Ok(())
+    }
+}
+
+impl FromGrammar for Literal {
+    type Input<'a> = nodes::Literal<'a>;
+
+    fn from_grammar(src: &Source, lit: Self::Input<'_>) -> Result<Self, ParseError> {
+        match lit {
+            nodes::Literal::Number(num) => Ok(Literal::Number(Number::from_grammar(src, num)?)),
+            nodes::Literal::Bool(nodes::Bool::True(_)) => Ok(Literal::Bool(true)),
+            nodes::Literal::Bool(nodes::Bool::False(_)) => Ok(Literal::Bool(false)),
+        }
     }
 }
 

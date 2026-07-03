@@ -1,0 +1,5 @@
+
+// EXPECT: f() == 1
+export func f() -> bool {
+    true
+}
