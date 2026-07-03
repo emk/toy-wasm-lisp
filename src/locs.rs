@@ -158,6 +158,7 @@ impl Loc {
 impl fmt::Debug for Loc {
     // Print as "file:begin:end" to reduce clutter in dumps.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.span.fmt(f)
+        let offset = self.span.offset();
+        (offset..offset.strict_add(self.span.len())).fmt(f)
     }
 }

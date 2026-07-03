@@ -12,6 +12,14 @@ function commaSep(rule) {
   return optional(seq(rule, repeat(seq(",", rule)), optional(",")));
 }
 
+/** @type {function(any, number, RuleOrLiteral): Rule} */
+function binopRule($, prec_level, rule) {
+  return prec.left(
+    prec_level,
+    seq(field("left", $._expr), field("op", rule), field("right", $._expr)),
+  );
+}
+
 export default grammar({
   name: "wasl",
 
@@ -85,22 +93,10 @@ export default grammar({
 
     binop: ($) =>
       choice(
-        prec.left(
-          1,
-          seq(
-            field("left", $._expr),
-            field("op", "+"),
-            field("right", $._expr),
-          ),
-        ),
-        prec.left(
-          2,
-          seq(
-            field("left", $._expr),
-            field("op", "*"),
-            field("right", $._expr),
-          ),
-        ),
+        binopRule($, 1, "&&"),
+        binopRule($, 2, choice("<", ">")),
+        binopRule($, 3, "+"),
+        binopRule($, 4, "*"),
       ),
 
     call: ($) =>

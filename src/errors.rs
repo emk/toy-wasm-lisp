@@ -127,13 +127,16 @@ pub enum TypeCheckError {
         span: SourceSpan,
     },
 
-    #[error("expected type `{right}` to match `{left}`")]
+    #[error("expected type `{right}` to be equal to `{left}`")]
     NotEqual {
         left: ExprType,
         right: ExprType,
 
-        #[label("mismatch here")]
-        span: SourceSpan,
+        #[label("the type `{left}` here")]
+        left_span: SourceSpan,
+
+        #[label("does not match `{right}` here")]
+        right_span: SourceSpan,
     },
 
     #[error("expected numeric type, found `{found}`")]
@@ -164,9 +167,15 @@ impl TypeCheckError {
         }
     }
 
-    pub fn not_equal(loc: &Loc, left: ExprType, right: ExprType) -> Self {
-        let span = loc.src_span();
-        Self::NotEqual { left, right, span }
+    pub fn not_equal(left_loc: &Loc, left: ExprType, right_loc: &Loc, right: ExprType) -> Self {
+        let left_span = left_loc.src_span();
+        let right_span = right_loc.src_span();
+        Self::NotEqual {
+            left,
+            right,
+            left_span,
+            right_span,
+        }
     }
 
     pub fn not_numeric(loc: &Loc, found: ExprType) -> Self {

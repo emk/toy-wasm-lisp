@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use miette::Result;
+use tracing::trace;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::InstructionSink;
@@ -8,7 +9,8 @@ use wasm_encoder::InstructionSink;
 use super::Ident;
 use crate::{
     ast::{
-        ExprType, FromGrammar, GetExprType, InferExprType, NodeResultExt, ValType,
+        ExprType, FromGrammar, FuncSig, GetExprType, InferExprType, NodeResultExt, ValType,
+        funcs::{Param, Params, Returns},
         types::IsSubtypeOf as _,
     },
     envs::{LocalEnv, SymbolTable, VarSymbol},
@@ -18,7 +20,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct Expr {
-    loc: Loc,
+    pub loc: Loc,
     variant: ExprVariant,
 }
 
@@ -56,20 +58,20 @@ impl InferExprType for Expr {
             },
             ExprVariant::Binop {
                 ty,
-                op: _,
+                is_signed,
+                op,
                 expr1,
                 expr2,
             } => {
                 let ty1 = expr1.infer_expr_type(symbol_table)?;
                 let ty2 = expr2.infer_expr_type(symbol_table)?;
-                if !ty1.is_numeric() || !ty2.is_numeric() {
-                    return Err(TypeCheckError::not_numeric(&self.loc, ty1).into());
-                }
-                if !ty1.type_eq(&ty2) {
-                    return Err(TypeCheckError::not_equal(&self.loc, ty1, ty2).into());
-                }
-                *ty = Some(ty1.expect_single().clone());
-                Ok(ty1)
+                let sig = op.sig(&self.loc, &expr1.loc, &ty1, &expr2.loc, &ty2)?;
+                let ty1_is_signed = ty1.is_signed();
+                let args = vec![(expr1.loc.clone(), ty1), (expr2.loc.clone(), ty2)];
+                let result_ty = sig.infer_call_type(&self.loc, &args)?;
+                *ty = Some(result_ty.expect_single().clone());
+                *is_signed = Some(ty1_is_signed);
+                Ok(result_ty)
             }
             ExprVariant::Var(ident) => {
                 let sym = symbol_table.get_var(ident)?;
@@ -77,20 +79,11 @@ impl InferExprType for Expr {
             }
             ExprVariant::Call { func_name, args } => {
                 let (_idx, sig) = symbol_table.get_func(func_name)?;
-                if args.len() != sig.params().len() {
-                    return Err(TypeCheckError::wrong_number_of_args(
-                        &self.loc,
-                        sig.params().len(),
-                        args.len(),
-                    )
-                    .into());
-                }
-                for (arg, param) in args.iter_mut().zip(sig.params().iter()) {
-                    let arg_ty = arg.infer_expr_type(symbol_table)?;
-                    let param_ty = param.ty();
-                    arg_ty.expecting(&arg.loc, &ExprType::single(param_ty.to_owned()))?;
-                }
-                sig.returns().expr_type()
+                let args = args
+                    .iter_mut()
+                    .map(|arg| Ok((arg.loc.clone(), arg.infer_expr_type(symbol_table)?)))
+                    .collect::<Result<Vec<_>>>()?;
+                sig.infer_call_type(&self.loc, &args)
             }
         }
     }
@@ -104,6 +97,7 @@ pub enum ExprVariant {
         /// needs to be resolved to a [`ValType`] by this point, because we
         /// don't support using multi-value expressions as arguments to binops.
         ty: Option<ValType>,
+        is_signed: Option<bool>,
         op: Binop,
         expr1: Box<Expr>,
         expr2: Box<Expr>,
@@ -133,10 +127,14 @@ impl ExprVariant {
         let op = match op_str {
             "+" => Binop::Add,
             "*" => Binop::Mul,
+            "<" => Binop::Lt,
+            ">" => Binop::Gt,
+            "&&" => Binop::And,
             _ => panic!("grammar matched {op_str:?}, but it isn't implemented"),
         };
         Ok(ExprVariant::Binop {
             ty: None,
+            is_signed: None,
             op,
             expr1: Box::new(expr1),
             expr2: Box::new(expr2),
@@ -162,13 +160,15 @@ impl ExprVariant {
             ExprVariant::Binop {
                 ty,
                 op,
+                is_signed,
                 expr1,
                 expr2,
             } => {
                 expr1.emit(env, sink)?;
                 expr2.emit(env, sink)?;
-                op.emit(env, sink)?;
                 let ty = ty.as_ref().expect("type inference should have been run");
+                let is_signed = is_signed.expect("type inference should have been run");
+                op.emit(env, is_signed, sink)?;
                 ty.emit_mask(sink)?;
             }
             ExprVariant::Var(name) => match env.symbol_table().get_var(name)? {
@@ -193,13 +193,112 @@ impl ExprVariant {
 pub enum Binop {
     Add,
     Mul,
+    Lt,
+    Gt,
+    // Logical AND.
+    And,
 }
 
 impl Binop {
-    fn emit(&self, _env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
+    /// Construct a fake identifier for this operator.
+    fn ident(&self, loc: &Loc) -> Ident {
+        let name = match self {
+            Binop::Add => "+",
+            Binop::Mul => "*",
+            Binop::Lt => "<",
+            Binop::Gt => ">",
+            Binop::And => "&&",
+        };
+        Ident::new(loc.to_owned(), name.to_owned())
+    }
+
+    /// Given the parameters passed to this operator, construct a `FuncSig` with
+    /// appropriate paramater and argument types. This provides a _very_ limited
+    /// form of static dispatch and/or template instantiation over our numeric
+    /// types where needed.
+    fn sig(
+        &self,
+        loc: &Loc,
+        loc1: &Loc,
+        ty1: &ExprType,
+        loc2: &Loc,
+        ty2: &ExprType,
+    ) -> Result<FuncSig> {
+        trace!(op = ?self, ?ty1, ?ty2, "computing binop signature");
+        let check_eq = || -> Result<()> {
+            if ty1.type_eq(ty2) {
+                Ok(())
+            } else {
+                Err(TypeCheckError::not_equal(loc1, ty1.to_owned(), loc2, ty2.to_owned()).into())
+            }
+        };
+        let check_numeric = || -> Result<()> {
+            if ty1.is_numeric() {
+                Ok(())
+            } else {
+                Err(TypeCheckError::not_numeric(loc, ty1.to_owned()).into())
+            }
+        };
+
+        let param1_name = Ident::new(loc1.to_owned(), "param1".to_owned());
+        let param2_name = Ident::new(loc2.to_owned(), "param2".to_owned());
+        let ty = ty1.expect_single().to_owned();
+        let mksig = |param1_ty, param2_ty, ret_ty| {
+            (
+                Params::new(
+                    loc.to_owned(),
+                    vec![
+                        Param::new(loc1.to_owned(), param1_name, param1_ty),
+                        Param::new(loc2.to_owned(), param2_name, param2_ty),
+                    ],
+                ),
+                Returns::new(loc.to_owned(), vec![ret_ty]),
+            )
+        };
+
+        // Do our "type instantiation".
+        let (params, returns) = match self {
+            // number OP number -> number
+            Binop::Add | Binop::Mul => {
+                check_eq()?;
+                check_numeric()?;
+                mksig(ty.clone(), ty.clone(), ty)
+            }
+            // number OP number -> bool
+            Binop::Lt | Binop::Gt => {
+                check_eq()?;
+                check_numeric()?;
+                mksig(ty.clone(), ty, ValType::bool(loc))
+            }
+            // bool OP bool -> bool
+            Binop::And => {
+                // Rely on normal call-site checking.
+                mksig(ValType::bool(loc), ValType::bool(loc), ValType::bool(loc))
+            }
+        };
+        trace!(op = ?self, ?params, ?returns, "computed binop signature");
+        Ok(FuncSig::new(
+            loc.to_owned(),
+            self.ident(loc),
+            params,
+            returns,
+        ))
+    }
+
+    fn emit(
+        &self,
+        _env: &LocalEnv<'_>,
+        is_signed: bool,
+        sink: &mut InstructionSink<'_>,
+    ) -> Result<()> {
         match self {
             Binop::Add => sink.i32_add(),
             Binop::Mul => sink.i32_mul(),
+            Binop::Lt if is_signed => sink.i32_lt_s(),
+            Binop::Lt => sink.i32_lt_u(),
+            Binop::Gt if is_signed => sink.i32_gt_s(),
+            Binop::Gt => sink.i32_gt_u(),
+            Binop::And => sink.i32_and(),
         };
         Ok(())
     }

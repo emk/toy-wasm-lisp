@@ -1,4 +1,5 @@
 use miette::Result;
+use tracing::trace;
 use tree_sitter_wasl_types::nodes;
 use type_sitter::Node as _;
 use wasm_encoder::{FuncType, Function, ValType as WasmValType};
@@ -9,7 +10,7 @@ use super::{
 use crate::{
     ast::FromGrammar,
     envs::{DeclTable, LocalEnv, ModuleEnv},
-    errors::ParseError,
+    errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
 };
 
@@ -81,16 +82,37 @@ pub struct FuncSig {
 }
 
 impl FuncSig {
+    /// Manually construct a [`FuncSig`]. Used for things like operators.
+    pub fn new(loc: Loc, name: Ident, params: Params, returns: Returns) -> Self {
+        Self {
+            loc,
+            name,
+            params,
+            returns,
+        }
+    }
+
     pub fn name(&self) -> &Ident {
         &self.name
     }
 
-    pub fn params(&self) -> &Params {
-        &self.params
-    }
-
     pub fn returns(&self) -> &Returns {
         &self.returns
+    }
+
+    /// Infer the type of a call.
+    pub fn infer_call_type(&self, loc: &Loc, args: &[(Loc, ExprType)]) -> Result<ExprType> {
+        trace!(sig = ?self, ?args, "inferring call type");
+        if args.len() != self.params.len() {
+            return Err(
+                TypeCheckError::wrong_number_of_args(loc, self.params.len(), args.len()).into(),
+            );
+        }
+        for ((arg_loc, arg_ty), param) in args.iter().zip(self.params.iter()) {
+            let param_ty = param.ty();
+            arg_ty.expecting(arg_loc, &ExprType::single(param_ty.to_owned()))?;
+        }
+        self.returns().expr_type()
     }
 
     pub fn wasm_func_type(&self) -> Result<FuncType> {
@@ -129,6 +151,11 @@ pub struct Params {
 }
 
 impl Params {
+    /// Create a new parameter list. Used internally for things like operators.
+    pub fn new(loc: Loc, params: Vec<Param>) -> Self {
+        Self { loc, params }
+    }
+
     pub fn len(&self) -> usize {
         self.params.len()
     }
@@ -178,6 +205,11 @@ pub struct Param {
 }
 
 impl Param {
+    /// Create a new parameter list. Used internally for things like operators.
+    pub fn new(loc: Loc, name: Ident, ty: ValType) -> Self {
+        Param { loc, name, ty }
+    }
+
     fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
         let local = Local::new(self.name.clone(), self.ty.clone());
         local_env.insert_local(self.name.clone(), local)?;
@@ -219,6 +251,11 @@ pub struct Returns {
 }
 
 impl Returns {
+    /// Create a new returns list. Used internally for things like operators.
+    pub fn new(loc: Loc, tys: Vec<ValType>) -> Self {
+        Self { loc, tys }
+    }
+
     fn wasm_types(&self) -> Result<Vec<WasmValType>> {
         Ok(self
             .tys

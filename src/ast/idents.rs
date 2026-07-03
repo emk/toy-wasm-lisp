@@ -20,6 +20,13 @@ pub struct Ident {
 }
 
 impl Ident {
+    /// Construct a new identifier. Used for things like operators,
+    /// which don't appear as actual identifiers in the grammar, but which may be usefully
+    /// treated like identifiers at various points.
+    pub fn new(loc: Loc, text: String) -> Ident {
+        Self { loc, text }
+    }
+
     #[cfg(test)]
     pub fn new_for_test(name: &str) -> Ident {
         Ident {

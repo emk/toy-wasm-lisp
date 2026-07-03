@@ -28,6 +28,11 @@ pub trait IsSubtypeOf {
     fn is_numeric(&self) -> bool {
         false
     }
+
+    /// Is this a signed numeric type?
+    fn is_signed(&self) -> bool {
+        false
+    }
 }
 
 /// Convert to a native WASM-representable type.
@@ -174,8 +179,11 @@ impl LinearValType {
         }
     }
 
+    /// Emit a potential "mask" operation after constructing a new stack-based
+    /// value of a type. This is used to truncate `u8` (etc) values, and
+    /// truncate and sign-extend `i8` (etc) values after performing arithmetic
+    /// operations.
     pub fn emit_mask(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
-        assert!(self.is_numeric());
         match &self.variant {
             LinearValTypeVariant::I8 => {
                 // Truncate and sign extend.
@@ -189,9 +197,7 @@ impl LinearValType {
                 sink.i32_and();
             }
             LinearValTypeVariant::I32 | LinearValTypeVariant::U32 => {}
-            LinearValTypeVariant::Bool => {
-                unreachable!("{self} is not a numeric type")
-            }
+            LinearValTypeVariant::Bool => {}
             LinearValTypeVariant::Ptr(_) => {
                 unreachable!("pointer types are not currently numeric")
             }
@@ -256,6 +262,16 @@ impl IsSubtypeOf for LinearValType {
             // No pointer math at the current time. Needs further thought if we want to learn
             // towards C or Rust or what in terms of language semantics.
             LinearValTypeVariant::Ptr(_) => false,
+        }
+    }
+
+    fn is_signed(&self) -> bool {
+        match &self.variant {
+            LinearValTypeVariant::I8 | LinearValTypeVariant::I32 => true,
+            LinearValTypeVariant::U8
+            | LinearValTypeVariant::U32
+            | LinearValTypeVariant::Bool
+            | LinearValTypeVariant::Ptr(_) => false,
         }
     }
 }
@@ -338,6 +354,13 @@ impl IsSubtypeOf for LinearStorageType {
     fn is_numeric(&self) -> bool {
         match &self.variant {
             LinearStorageTypeVariant::LinearValType(ty) => ty.is_numeric(),
+            LinearStorageTypeVariant::LinearRecordType(_) => false,
+        }
+    }
+
+    fn is_signed(&self) -> bool {
+        match &self.variant {
+            LinearStorageTypeVariant::LinearValType(ty) => ty.is_signed(),
             LinearStorageTypeVariant::LinearRecordType(_) => false,
         }
     }
@@ -526,9 +549,10 @@ impl ValType {
         }
     }
 
-    /// Emit a masking operation for this type.
+    /// Emit any masking operation needed for this type.
+    ///
+    /// This is a no-op for booleans and other types that never need masks.
     pub fn emit_mask(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
-        assert!(self.is_numeric());
         match &self.variant {
             ValTypeVariant::Linear(ty) => ty.emit_mask(sink),
         }
@@ -568,6 +592,12 @@ impl IsSubtypeOf for ValType {
     fn is_numeric(&self) -> bool {
         match &self.variant {
             ValTypeVariant::Linear(ty) => ty.is_numeric(),
+        }
+    }
+
+    fn is_signed(&self) -> bool {
+        match &self.variant {
+            ValTypeVariant::Linear(ty) => ty.is_signed(),
         }
     }
 }
@@ -651,5 +681,9 @@ impl IsSubtypeOf for ExprType {
 
     fn is_numeric(&self) -> bool {
         self.tys.len() == 1 && self.tys[0].is_numeric()
+    }
+
+    fn is_signed(&self) -> bool {
+        self.tys.len() == 1 && self.tys[0].is_signed()
     }
 }

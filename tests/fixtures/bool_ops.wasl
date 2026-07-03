@@ -1,0 +1,4 @@
+// EXPECT: f() == 1
+export func f() -> bool {
+    1u8 < 132u8 && 20 > -20
+}
