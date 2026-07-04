@@ -1,6 +1,6 @@
 # WORK IN PROGRESS: Toy Lisp for WASM
 
-This does not do anything yet. I am experimenting with various ill-conceived macroassembler ideas as a way of forcing myself to learn low-level WASM GC details.
+This does not do anything yet. I am experimenting with various ill-conceived macroassembler/system language ideas as a way of forcing myself to learn low-level WASM GC details.
 
 ## WATM: WAT + Lisp-like macros 
 
@@ -23,7 +23,9 @@ env RUST_LOG=toy_wasm_lisp=debug,warn cargo run -- \
     run runtime/wasl/runtime.wasl
 ```
 
-### Force rebuilding the grammar (fish shell)
+This has basically no runtime sketch yet, pending further work on the system language needed to write it.
+
+### Force rebuilding the grammar
 
 You can build everything using `just`, if it's installed:
 
