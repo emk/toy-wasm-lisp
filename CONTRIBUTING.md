@@ -20,12 +20,24 @@ See README.md for instructions on building and running the Lisp-based experiment
     - `symbol_table.rs`: Our main symbol table.
   - `locs.rs`: Source files and locations in them.
   - `parser.rs`: Interface to `tree-sitter` and `type-sitter` parsing machinery.
-- `texts/fixtures/`: Source files that can be compiled, including what output or errors we expect.
+- `tests/fixtures/`: Source files that can be compiled, including what output or errors we expect.
 - `watm-assembler.lisp`: The "assembler" for our WAT extensions with Lisp macros.
 
 ## Rust style
 
 We're using `miette` and `tracing`. TODO: Elaborate on style details.
+
+## Language design
+
+See the tests/fixtures for many samples of what the language looks like so far. Note that I favor hewing close to underlying WASM/WAT naming where possible:
+
+```
+export func f() -> i32 {
+    1
+}
+```
+
+Syntax is otherwise mostly Rust-based. One key decision: Both non-GC and GC types should both be available. I have not yet decided on many design ideas, but the core creative tension is staying very close to underlying nature of WASM while still providing a quality system language. We are distinguished from C and Rust WASM targets by wanting much tighter GC integration, without becoming a GC-only language.
 
 ## AI Policy
 
