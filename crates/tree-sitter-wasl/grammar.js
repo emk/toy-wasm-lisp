@@ -85,7 +85,18 @@ export default grammar({
         ),
       ),
 
-    block: ($) => seq("{", field("expr", $._expr), "}"),
+    block: ($) =>
+      seq(
+        "{",
+        optional(
+          seq(
+            field("expr", $._expr),
+            repeat(seq(";", field("expr", $._expr))),
+            field("trailing_semi", optional(";")),
+          ),
+        ),
+        "}",
+      ),
 
     // Anonymous rule with named children to force creation of an
     // `enum` in Rust `type-sitter` bindings.

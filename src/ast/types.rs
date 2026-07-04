@@ -621,6 +621,11 @@ pub struct ExprType {
 }
 
 impl ExprType {
+    /// Construct a empty expression type.
+    pub fn void() -> Self {
+        ExprType { tys: smallvec![] }
+    }
+
     /// Construct a single type.
     pub fn single(ty: ValType) -> Self {
         Self { tys: smallvec![ty] }

@@ -1,0 +1,18 @@
+func g() {
+}
+
+func h() -> i32 {
+    1
+}
+
+func h2() {
+    // TODO: Decide how we want to handle discarding values.
+    //h(); // Like Rust, ";" blocks return value.
+}
+
+// EXPECT: f() == 2
+export func f() -> i32 {
+    g();
+    h2();
+    2
+}
