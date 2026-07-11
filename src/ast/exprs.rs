@@ -65,7 +65,7 @@ impl InferExprType for Expr {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         match self {
             Expr::Literal(literal_expr) => literal_expr.expr_type(),
@@ -133,7 +133,7 @@ impl InferExprType for BinopExpr {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         let ty1 = self.expr1.infer_expr_type(env, syms)?;
         let ty2 = self.expr2.infer_expr_type(env, syms)?;
@@ -205,7 +205,7 @@ impl InferExprType for VarExpr {
     fn infer_expr_type(
         &mut self,
         _env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         let sym = syms.get_var(&self.ident)?;
         self.inferred_sym = Some(sym.clone());
@@ -261,7 +261,7 @@ impl InferExprType for CallExpr {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         let args = self
             .args

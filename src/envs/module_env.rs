@@ -23,7 +23,7 @@ pub struct ModuleEnv {
 
     type_indexer: TypeIndexer,
     func_decls: DeclTable<FuncSig>,
-    symbol_table: SymbolTable<'static, 'static>,
+    symbol_table: SymbolTable<'static>,
 }
 
 impl ModuleEnv {
@@ -42,7 +42,7 @@ impl ModuleEnv {
     }
 
     /// Get our symbol table, for looking up names.
-    pub fn symbol_table(&self) -> &SymbolTable<'static, 'static> {
+    pub fn symbol_table(&self) -> &SymbolTable<'static> {
         &self.symbol_table
     }
 

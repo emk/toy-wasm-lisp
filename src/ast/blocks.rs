@@ -45,7 +45,7 @@ impl InferExprType for Block {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         infer_expr_type_helper(&mut self.stmts, self.trailing_semi.is_some(), env, syms)
     }
@@ -57,7 +57,7 @@ fn infer_expr_type_helper(
     stmts: &mut [Stmt],
     has_trailing_semi: bool,
     env: &mut FuncEnv,
-    syms: &mut SymbolTable<'_, '_>,
+    syms: &mut SymbolTable<'_>,
 ) -> Result<ExprType> {
     let stmts_len = stmts.len();
     if stmts_len == 0 {

@@ -48,7 +48,7 @@ pub trait InferExprType {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType>;
 }
 

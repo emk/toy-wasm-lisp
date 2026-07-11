@@ -47,7 +47,7 @@ impl InferExprType for LocalStmt {
     fn infer_expr_type(
         &mut self,
         env: &mut FuncEnv,
-        syms: &mut SymbolTable<'_, '_>,
+        syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         let ty = self.expr.infer_expr_type(env, syms)?;
 

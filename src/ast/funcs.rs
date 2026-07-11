@@ -258,7 +258,7 @@ impl InferExprType for Param {
     fn infer_expr_type(
         &mut self,
         _env: &mut FuncEnv,
-        _syms: &mut SymbolTable<'_, '_>,
+        _syms: &mut SymbolTable<'_>,
     ) -> Result<ExprType> {
         Ok(ExprType::single(self.ty.clone()))
     }

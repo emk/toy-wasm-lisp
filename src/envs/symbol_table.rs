@@ -92,8 +92,10 @@ impl FuncSymbol {
 }
 
 /// Table for looking up symbols/names used in source code.
-/// May be chained in a hierachy.
-pub struct SymbolTable<'parent_ref: 'parent, 'parent> {
+///
+/// This is designed to be used as a "linked list" with each node allocated
+/// on a Rust stack frame (as local) during a recursive walk of the AST.
+pub struct SymbolTable<'parent> {
     /// Parent [`SymbolTable`], if any.
     ///
     /// There is some deep sneakiness in how we're managing lifetimes here. We
@@ -102,12 +104,12 @@ pub struct SymbolTable<'parent_ref: 'parent, 'parent> {
     /// (which would probably be fine, actually).
     ///
     /// We need to distinguish 'parent_ref from
-    parent: Option<&'parent_ref SymbolTable<'parent, 'parent>>,
+    parent: Option<&'parent SymbolTable<'parent>>,
     /// Our own local symbols.
     map: HashMap<Ident, Symbol>,
 }
 
-impl SymbolTable<'static, 'static> {
+impl SymbolTable<'static> {
     pub fn new() -> Self {
         Self {
             parent: None,
@@ -116,9 +118,9 @@ impl SymbolTable<'static, 'static> {
     }
 }
 
-impl<'parent_ref, 'parent> SymbolTable<'parent_ref, 'parent> {
+impl<'parent> SymbolTable<'parent> {
     /// Create a child [`SymbolTable`] which may shadow symbols in the parent.
-    pub fn child(&self) -> SymbolTable<'_, 'parent> {
+    pub fn child<'self_ref: 'parent>(&'self_ref self) -> SymbolTable<'self_ref> {
         Self {
             parent: Some(self),
             map: HashMap::new(),
