@@ -7,7 +7,7 @@ use wasm_encoder::{
 pub use super::{DeclIdx, IndexedType, Symbol, SymbolTable, TypeIndexer};
 use crate::{
     ast::{Func, FuncSig, Ident, Import},
-    envs::DeclTable,
+    envs::{DeclTable, symbol_table::FuncSymbol},
 };
 
 /// Module-level environment.
@@ -23,7 +23,7 @@ pub struct ModuleEnv {
 
     type_indexer: TypeIndexer,
     func_decls: DeclTable<FuncSig>,
-    symbol_table: SymbolTable<'static>,
+    symbol_table: SymbolTable<'static, 'static>,
 }
 
 impl ModuleEnv {
@@ -42,7 +42,7 @@ impl ModuleEnv {
     }
 
     /// Get our symbol table, for looking up names.
-    pub fn symbol_table(&self) -> &SymbolTable<'static> {
+    pub fn symbol_table(&self) -> &SymbolTable<'static, 'static> {
         &self.symbol_table
     }
 
@@ -69,10 +69,7 @@ impl ModuleEnv {
         let idx = self.func_decls.insert(sig.clone());
         self.symbol_table.insert(
             name.clone(),
-            Symbol::Func {
-                idx,
-                func_sig: Box::new(sig.clone()),
-            },
+            Symbol::Func(FuncSymbol::new(idx, Box::new(sig.clone()))),
         )?;
         Ok((type_idx, idx))
     }

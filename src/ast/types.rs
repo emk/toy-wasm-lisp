@@ -647,6 +647,14 @@ impl ExprType {
         }
     }
 
+    /// If this is a single value, extract it. Otherwise return and error.
+    pub fn expecting_value_count(&self, loc: &Loc, expected: usize) -> Result<&ValType> {
+        if self.tys.len() != expected {
+            return Err(TypeCheckError::wrong_number_of_values(loc, expected, self.clone()).into());
+        }
+        Ok(&self.tys[0])
+    }
+
     /// If this [`ExprType`] contains a single [`ValueType`], return it.
     /// Otherwise panic.
     pub fn expect_single(&self) -> &ValType {

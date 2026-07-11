@@ -1,0 +1,8 @@
+func nothing() {}
+
+// EXPECT: f() == 2
+export func f() -> i32 {
+    nothing();
+    local x = 2;
+    x
+}

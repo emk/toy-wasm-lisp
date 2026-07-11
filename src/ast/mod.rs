@@ -4,6 +4,7 @@
 //! parser. Conversions are handled by various `TYPE::from_grammar` functions.
 use miette::Result;
 use type_sitter::NodeResult;
+use wasm_encoder::InstructionSink;
 
 pub use self::{
     blocks::Block,
@@ -11,11 +12,15 @@ pub use self::{
     funcs::{Func, FuncSig},
     idents::Ident,
     imports::Import,
-    locals::Local,
+    locals::LocalSymbol,
     mods::Mod,
     types::{ExprType, ToWasmType, ValType},
 };
-use crate::{envs::SymbolTable, errors::ParseError, locs::Source};
+use crate::{
+    envs::{FuncEnv, SymbolTable},
+    errors::ParseError,
+    locs::Source,
+};
 
 mod blocks;
 mod exprs;
@@ -40,7 +45,11 @@ pub trait FromGrammar: Sized {
 /// This may update the AST node with type information where needed for later
 /// passes.
 pub trait InferExprType {
-    fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<ExprType>;
+    fn infer_expr_type(
+        &mut self,
+        env: &mut FuncEnv,
+        syms: &mut SymbolTable<'_, '_>,
+    ) -> Result<ExprType>;
 }
 
 /// Get the type of an expression.
@@ -49,6 +58,12 @@ pub trait InferExprType {
 /// access the already-known types of things like resolved symbols.
 pub trait GetExprType {
     fn expr_type(&self) -> Result<ExprType>;
+}
+
+/// Emit code for a node.
+pub trait Emit {
+    /// Emit instructions to an [`InstructionSink`].
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()>;
 }
 
 /// Extension used to verify that our parse tree matches our grammar. This

@@ -16,4 +16,12 @@ impl<T> DeclTable<T> {
         self.decls.push(value);
         DeclIdx::new(index)
     }
+
+    /// Our underlying items.
+    pub fn items(&self) -> impl Iterator<Item = (DeclIdx<T>, &T)> {
+        self.decls
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| (DeclIdx::new(idx), item))
+    }
 }

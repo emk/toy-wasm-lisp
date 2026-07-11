@@ -336,10 +336,10 @@
               "members": [
                 {
                   "type": "FIELD",
-                  "name": "expr",
+                  "name": "stmt",
                   "content": {
                     "type": "SYMBOL",
-                    "name": "_expr"
+                    "name": "_stmt"
                   }
                 },
                 {
@@ -353,10 +353,10 @@
                       },
                       {
                         "type": "FIELD",
-                        "name": "expr",
+                        "name": "stmt",
                         "content": {
                           "type": "SYMBOL",
-                          "name": "_expr"
+                          "name": "_stmt"
                         }
                       }
                     ]
@@ -388,6 +388,48 @@
         {
           "type": "STRING",
           "value": "}"
+        }
+      ]
+    },
+    "_stmt": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "local"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_expr"
+        }
+      ]
+    },
+    "local": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "STRING",
+          "value": "local"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "ident"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "="
+        },
+        {
+          "type": "FIELD",
+          "name": "expr",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_expr"
+          }
         }
       ]
     },
@@ -995,6 +1037,7 @@
   "inline": [],
   "supertypes": [
     "_top_level",
+    "_stmt",
     "_expr",
     "_atom",
     "_linear_val_type",

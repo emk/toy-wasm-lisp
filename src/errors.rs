@@ -155,6 +155,16 @@ pub enum TypeCheckError {
         #[label("expected {expected} arguments")]
         span: SourceSpan,
     },
+
+    #[error(
+        "expression returned wrong number of values (expected {expected_count}, found type {ty}"
+    )]
+    WrongNumberOfValues {
+        expected_count: usize,
+        ty: ExprType,
+        #[label("found type {ty}")]
+        span: SourceSpan,
+    },
 }
 
 impl TypeCheckError {
@@ -188,6 +198,15 @@ impl TypeCheckError {
         Self::WrongNumberOfArgs {
             expected,
             found,
+            span,
+        }
+    }
+
+    pub fn wrong_number_of_values(loc: &Loc, expected_count: usize, ty: ExprType) -> Self {
+        let span = loc.src_span();
+        Self::WrongNumberOfValues {
+            expected_count,
+            ty,
             span,
         }
     }

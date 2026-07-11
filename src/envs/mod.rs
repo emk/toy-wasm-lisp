@@ -7,15 +7,15 @@
 pub use self::{
     decl_idx::DeclIdx,
     decl_table::DeclTable,
-    local_env::LocalEnv,
+    func_env::FuncEnv,
     module_env::ModuleEnv,
-    symbol_table::{Symbol, SymbolCategory, SymbolTable, VarSymbol},
+    symbol_table::{FuncSymbol, Symbol, SymbolCategory, SymbolTable, VarSymbol},
     type_indexer::{IndexedType, TypeIndexer},
 };
 
 mod decl_idx;
 mod decl_table;
-mod local_env;
+mod func_env;
 mod module_env;
 mod symbol_table;
 mod type_indexer;

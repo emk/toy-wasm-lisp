@@ -9,24 +9,33 @@ use wasm_encoder::InstructionSink;
 use super::Ident;
 use crate::{
     ast::{
-        ExprType, FromGrammar, FuncSig, GetExprType, InferExprType, NodeResultExt, ValType,
+        Emit, ExprType, FromGrammar, FuncSig, GetExprType, InferExprType, NodeResultExt, ValType,
         funcs::{Param, Params, Returns},
         types::IsSubtypeOf as _,
     },
-    envs::{LocalEnv, SymbolTable, VarSymbol},
+    envs::{FuncEnv, FuncSymbol, SymbolTable, VarSymbol},
     errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
 };
 
+/// An expression in the AST.
 #[derive(Clone, Debug)]
-pub struct Expr {
-    pub loc: Loc,
-    variant: ExprVariant,
+pub enum Expr {
+    Literal(LiteralExpr),
+    Binop(BinopExpr),
+    Var(VarExpr),
+    Call(CallExpr),
 }
 
 impl Expr {
-    pub fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
-        self.variant.emit(env, sink)
+    /// Get the location of this expression.
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Expr::Literal(lit) => lit.loc(),
+            Expr::Binop(binop) => &binop.loc,
+            Expr::Var(var) => &var.loc,
+            Expr::Call(call) => &call.loc,
+        }
     }
 }
 
@@ -34,93 +43,71 @@ impl FromGrammar for Expr {
     type Input<'a> = nodes::Expr<'a>;
 
     fn from_grammar(src: &Source, expr: nodes::Expr<'_>) -> Result<Self, ParseError> {
-        let loc = src.loc_for(expr.raw());
-        let variant = match expr {
-            nodes::Expr::Atom(atom) => ExprVariant::from_grammar_atom(src, atom)?,
-            nodes::Expr::Binop(binop) => ExprVariant::from_grammar_binop(src, binop)?,
-            nodes::Expr::Call(call) => ExprVariant::from_grammar_call(src, call)?,
-        };
-        Ok(Self { loc, variant })
+        match expr {
+            // We unpack `nodes::Atom` without including it directly in the
+            // actual AST.
+            nodes::Expr::Atom(atom) => match atom {
+                nodes::Atom::Ident(ident) => Ok(Expr::Var(VarExpr::from_grammar(src, ident)?)),
+                nodes::Atom::Literal(lit) => {
+                    Ok(Expr::Literal(LiteralExpr::from_grammar(src, lit)?))
+                }
+                nodes::Atom::ParenExpr(expr) => {
+                    Expr::from_grammar(src, expr.expr().expect_matching())
+                }
+            },
+            nodes::Expr::Binop(binop) => Ok(Expr::Binop(BinopExpr::from_grammar(src, binop)?)),
+            nodes::Expr::Call(call) => Ok(Expr::Call(CallExpr::from_grammar(src, call)?)),
+        }
     }
 }
 
 impl InferExprType for Expr {
-    fn infer_expr_type(&mut self, symbol_table: &SymbolTable<'_>) -> Result<ExprType> {
-        match &mut self.variant {
-            ExprVariant::Literal(lit) => match lit {
-                Literal::Number(n) => match n {
-                    Number::I8(_) => Ok(ExprType::single(ValType::i8(&self.loc))),
-                    Number::U8(_) => Ok(ExprType::single(ValType::u8(&self.loc))),
-                    Number::I32(_) => Ok(ExprType::single(ValType::i32(&self.loc))),
-                    Number::U32(_) => Ok(ExprType::single(ValType::u32(&self.loc))),
-                },
-                Literal::Bool(_) => Ok(ExprType::single(ValType::bool(&self.loc))),
-            },
-            ExprVariant::Binop {
-                ty,
-                is_signed,
-                op,
-                expr1,
-                expr2,
-            } => {
-                let ty1 = expr1.infer_expr_type(symbol_table)?;
-                let ty2 = expr2.infer_expr_type(symbol_table)?;
-                let sig = op.sig(&self.loc, &expr1.loc, &ty1, &expr2.loc, &ty2)?;
-                let ty1_is_signed = ty1.is_signed();
-                let args = vec![(expr1.loc.clone(), ty1), (expr2.loc.clone(), ty2)];
-                let result_ty = sig.infer_call_type(&self.loc, &args)?;
-                *ty = Some(result_ty.expect_single().clone());
-                *is_signed = Some(ty1_is_signed);
-                Ok(result_ty)
-            }
-            ExprVariant::Var(ident) => {
-                let sym = symbol_table.get_var(ident)?;
-                sym.expr_type()
-            }
-            ExprVariant::Call { func_name, args } => {
-                let (_idx, sig) = symbol_table.get_func(func_name)?;
-                let args = args
-                    .iter_mut()
-                    .map(|arg| Ok((arg.loc.clone(), arg.infer_expr_type(symbol_table)?)))
-                    .collect::<Result<Vec<_>>>()?;
-                sig.infer_call_type(&self.loc, &args)
-            }
+    fn infer_expr_type(
+        &mut self,
+        env: &mut FuncEnv,
+        syms: &mut SymbolTable<'_, '_>,
+    ) -> Result<ExprType> {
+        match self {
+            Expr::Literal(literal_expr) => literal_expr.expr_type(),
+            Expr::Binop(binop_expr) => binop_expr.infer_expr_type(env, syms),
+            Expr::Var(var_expr) => var_expr.infer_expr_type(env, syms),
+            Expr::Call(call_expr) => call_expr.infer_expr_type(env, syms),
         }
     }
 }
 
+impl Emit for Expr {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        match self {
+            Expr::Literal(lit) => lit.emit(sink),
+            Expr::Binop(binop) => binop.emit(sink),
+            Expr::Var(var) => var.emit(sink),
+            Expr::Call(call) => call.emit(sink),
+        }
+    }
+}
+
+/// A binary operator expression.
 #[derive(Clone, Debug)]
-pub enum ExprVariant {
-    Literal(Literal),
-    Binop {
-        /// Inferred operator type, for both arguments and return value. This
-        /// needs to be resolved to a [`ValType`] by this point, because we
-        /// don't support using multi-value expressions as arguments to binops.
-        ty: Option<ValType>,
-        is_signed: Option<bool>,
-        op: Binop,
-        expr1: Box<Expr>,
-        expr2: Box<Expr>,
-    },
-    Var(Ident),
-    Call {
-        func_name: Ident,
-        args: Vec<Expr>,
-    },
+pub struct BinopExpr {
+    loc: Loc,
+    op: Binop,
+    expr1: Box<Expr>,
+    expr2: Box<Expr>,
+
+    /// Inferred operator signature. Since many of our operators are at least
+    /// partially "generic" in their argument types, we generate concrete
+    /// signatures on the fly during type inference. Note that this signature is
+    /// must be (and is later guaranteed to be) "valid" according to the rules of the
+    /// language.
+    inferred_sig: Option<FuncSig>,
 }
 
-impl ExprVariant {
-    fn from_grammar_atom(src: &Source, atom: nodes::Atom<'_>) -> Result<Self, ParseError> {
-        match atom {
-            nodes::Atom::Ident(ident) => Ok(ExprVariant::Var(Ident::from_grammar(src, ident)?)),
-            nodes::Atom::Literal(lit) => Ok(ExprVariant::Literal(Literal::from_grammar(src, lit)?)),
-            nodes::Atom::ParenExpr(expr) => {
-                Ok(Expr::from_grammar(src, expr.expr().expect_matching())?.variant)
-            }
-        }
-    }
+impl FromGrammar for BinopExpr {
+    type Input<'a> = nodes::Binop<'a>;
 
-    fn from_grammar_binop(src: &Source, binop: nodes::Binop<'_>) -> Result<Self, ParseError> {
+    fn from_grammar(src: &Source, binop: Self::Input<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(binop.raw());
         let expr1 = Expr::from_grammar(src, binop.left().expect_matching())?;
         let expr2 = Expr::from_grammar(src, binop.right().expect_matching())?;
         let op_str = src.node_text(binop.op().expect_matching().raw());
@@ -132,16 +119,128 @@ impl ExprVariant {
             "&&" => Binop::And,
             _ => panic!("grammar matched {op_str:?}, but it isn't implemented"),
         };
-        Ok(ExprVariant::Binop {
-            ty: None,
-            is_signed: None,
+        Ok(BinopExpr {
+            loc,
             op,
             expr1: Box::new(expr1),
             expr2: Box::new(expr2),
+            inferred_sig: None,
         })
     }
+}
 
-    fn from_grammar_call(src: &Source, call: nodes::Call<'_>) -> Result<Self, ParseError> {
+impl InferExprType for BinopExpr {
+    fn infer_expr_type(
+        &mut self,
+        env: &mut FuncEnv,
+        syms: &mut SymbolTable<'_, '_>,
+    ) -> Result<ExprType> {
+        let ty1 = self.expr1.infer_expr_type(env, syms)?;
+        let ty2 = self.expr2.infer_expr_type(env, syms)?;
+        let sig = self
+            .op
+            .sig(&self.loc, self.expr1.loc(), &ty1, self.expr2.loc(), &ty2)?;
+        let args = vec![
+            (self.expr1.loc().clone(), ty1),
+            (self.expr2.loc().clone(), ty2),
+        ];
+        let result_ty = sig.infer_call_type(&self.loc, &args)?;
+        result_ty.expect_single(); // Assertion. Should already be enforced.
+        self.inferred_sig = Some(sig);
+        Ok(result_ty)
+    }
+}
+
+impl Emit for BinopExpr {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        self.expr1.emit(sink)?;
+        self.expr2.emit(sink)?;
+        let sig = self
+            .inferred_sig
+            .as_ref()
+            .expect("type inference should have been run");
+
+        // Get our param type, which should _currently_ be the same for both
+        // parameters.
+        let params = sig.params();
+        assert!(params.len() == 2);
+        let param_ty = params[0].ty().clone();
+        debug_assert!(param_ty.type_eq(params[1].ty()));
+
+        // Emit an operator, using the signed variant where our parameter type
+        // requires it.
+        self.op.emit(param_ty.is_signed(), sink)?;
+
+        // Perform any return-type masking required to emulate 8-bit and
+        // 16-bit numeric types.
+        sig.returns().expr_type()?.expect_single().emit_mask(sink)?;
+        Ok(())
+    }
+}
+
+/// A reference to a variable (including parameters).
+#[derive(Clone, Debug)]
+pub struct VarExpr {
+    loc: Loc,
+    ident: Ident,
+    /// The variable symbol we're referencing, set during type inference.
+    inferred_sym: Option<VarSymbol>,
+}
+
+impl FromGrammar for VarExpr {
+    type Input<'a> = nodes::Ident<'a>;
+
+    fn from_grammar(src: &Source, var: Self::Input<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(var.raw());
+        let ident = Ident::from_grammar(src, var)?;
+        Ok(VarExpr {
+            loc,
+            ident,
+            inferred_sym: None,
+        })
+    }
+}
+
+impl InferExprType for VarExpr {
+    fn infer_expr_type(
+        &mut self,
+        _env: &mut FuncEnv,
+        syms: &mut SymbolTable<'_, '_>,
+    ) -> Result<ExprType> {
+        let sym = syms.get_var(&self.ident)?;
+        self.inferred_sym = Some(sym.clone());
+        sym.expr_type()
+    }
+}
+
+impl Emit for VarExpr {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        let sym = self
+            .inferred_sym
+            .as_ref()
+            .expect("type inference should have run");
+        match sym {
+            VarSymbol::Local { idx, local } => local.emit_get(*idx, sink)?,
+        }
+        Ok(())
+    }
+}
+
+/// A function call.
+#[derive(Clone, Debug)]
+pub struct CallExpr {
+    loc: Loc,
+    func_name: Ident,
+    args: Vec<Expr>,
+    /// The function symbol we're referencing, set during type inference.
+    inferred_sym: Option<FuncSymbol>,
+}
+
+impl FromGrammar for CallExpr {
+    type Input<'a> = nodes::Call<'a>;
+
+    fn from_grammar(src: &Source, call: Self::Input<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(call.raw());
         let func_name = Ident::from_grammar(src, call.func().expect_matching())?;
         let mut args = vec![];
         let mut c = call.walk();
@@ -149,41 +248,44 @@ impl ExprVariant {
             let arg = arg.expect_matching();
             args.push(Expr::from_grammar(src, arg)?);
         }
-        Ok(ExprVariant::Call { func_name, args })
+        Ok(CallExpr {
+            loc,
+            func_name,
+            args,
+            inferred_sym: None,
+        })
     }
+}
 
-    fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
-        match &self {
-            ExprVariant::Literal(lit) => {
-                lit.emit(env, sink)?;
-            }
-            ExprVariant::Binop {
-                ty,
-                op,
-                is_signed,
-                expr1,
-                expr2,
-            } => {
-                expr1.emit(env, sink)?;
-                expr2.emit(env, sink)?;
-                let ty = ty.as_ref().expect("type inference should have been run");
-                let is_signed = is_signed.expect("type inference should have been run");
-                op.emit(env, is_signed, sink)?;
-                ty.emit_mask(sink)?;
-            }
-            ExprVariant::Var(name) => match env.symbol_table().get_var(name)? {
-                VarSymbol::Local { idx, local } => local.emit_get(*idx, sink)?,
-            },
-            ExprVariant::Call { func_name, args } => {
-                let (idx, _func) = env.symbol_table().get_func(func_name)?;
+impl InferExprType for CallExpr {
+    fn infer_expr_type(
+        &mut self,
+        env: &mut FuncEnv,
+        syms: &mut SymbolTable<'_, '_>,
+    ) -> Result<ExprType> {
+        let args = self
+            .args
+            .iter_mut()
+            .map(|arg| Ok((arg.loc().clone(), arg.infer_expr_type(env, syms)?)))
+            .collect::<Result<Vec<_>>>()?;
+        let sym = syms.get_func(&self.func_name)?;
+        self.inferred_sym = Some(sym.clone());
+        sym.func_sig().infer_call_type(&self.loc, &args)
+    }
+}
 
-                // Emit args and call.
-                for arg in args {
-                    arg.emit(env, sink)?;
-                }
-                sink.call(idx.try_as_u32()?);
-            }
+impl Emit for CallExpr {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        let sym = self
+            .inferred_sym
+            .as_ref()
+            .expect("type inference should have run");
+
+        // Emit args and call.
+        for arg in &self.args {
+            arg.emit(sink)?;
         }
+        sink.call(sym.idx().try_as_u32()?);
         Ok(())
     }
 }
@@ -285,12 +387,7 @@ impl Binop {
         ))
     }
 
-    fn emit(
-        &self,
-        _env: &LocalEnv<'_>,
-        is_signed: bool,
-        sink: &mut InstructionSink<'_>,
-    ) -> Result<()> {
+    fn emit(&self, is_signed: bool, sink: &mut InstructionSink<'_>) -> Result<()> {
         match self {
             Binop::Add => sink.i32_add(),
             Binop::Mul => sink.i32_mul(),
@@ -305,33 +402,64 @@ impl Binop {
 }
 
 /// A literal value.
+///
+/// We track location here, which affects the division of responsibility between
+/// us and our child types. Our child types don't _necessarily_ implement the
+/// full set of [`FromGrammar`], [`GetExprType`], and [`Emit`] themselves.
 #[derive(Clone, Debug)]
-pub enum Literal {
-    Number(Number),
-    Bool(bool),
+pub enum LiteralExpr {
+    Number { loc: Loc, n: Number },
+    Bool { loc: Loc, b: bool },
 }
 
-impl Literal {
-    fn emit(&self, env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
+impl LiteralExpr {
+    fn loc(&self) -> &Loc {
+        match self {
+            LiteralExpr::Number { loc, .. } => loc,
+            LiteralExpr::Bool { loc, .. } => loc,
+        }
+    }
+}
+
+impl FromGrammar for LiteralExpr {
+    type Input<'a> = nodes::Literal<'a>;
+
+    fn from_grammar(src: &Source, lit: Self::Input<'_>) -> Result<Self, ParseError> {
+        let loc = src.loc_for(lit.raw());
+        match lit {
+            nodes::Literal::Number(num) => Ok(LiteralExpr::Number {
+                loc,
+                n: Number::from_grammar(src, num)?,
+            }),
+            nodes::Literal::Bool(nodes::Bool::True(_)) => Ok(LiteralExpr::Bool { loc, b: true }),
+            nodes::Literal::Bool(nodes::Bool::False(_)) => Ok(LiteralExpr::Bool { loc, b: false }),
+        }
+    }
+}
+
+impl GetExprType for LiteralExpr {
+    fn expr_type(&self) -> Result<ExprType> {
+        match self {
+            LiteralExpr::Number { loc, n } => match n {
+                Number::I8(_) => Ok(ExprType::single(ValType::i8(loc))),
+                Number::U8(_) => Ok(ExprType::single(ValType::u8(loc))),
+                Number::I32(_) => Ok(ExprType::single(ValType::i32(loc))),
+                Number::U32(_) => Ok(ExprType::single(ValType::u32(loc))),
+            },
+            LiteralExpr::Bool { loc, .. } => Ok(ExprType::single(ValType::bool(loc))),
+        }
+    }
+}
+
+impl Emit for LiteralExpr {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
         match &self {
-            Literal::Number(n) => n.emit(env, sink)?,
-            Literal::Bool(b) => {
+            LiteralExpr::Number { n, .. } => n.emit(sink)?,
+            LiteralExpr::Bool { b, .. } => {
                 sink.i32_const(if *b { 1 } else { 0 });
             }
         }
         Ok(())
-    }
-}
-
-impl FromGrammar for Literal {
-    type Input<'a> = nodes::Literal<'a>;
-
-    fn from_grammar(src: &Source, lit: Self::Input<'_>) -> Result<Self, ParseError> {
-        match lit {
-            nodes::Literal::Number(num) => Ok(Literal::Number(Number::from_grammar(src, num)?)),
-            nodes::Literal::Bool(nodes::Bool::True(_)) => Ok(Literal::Bool(true)),
-            nodes::Literal::Bool(nodes::Bool::False(_)) => Ok(Literal::Bool(false)),
-        }
     }
 }
 
@@ -342,23 +470,6 @@ pub enum Number {
     U8(u8),
     I32(i32),
     U32(u32),
-}
-
-impl Number {
-    fn emit(&self, _env: &LocalEnv<'_>, sink: &mut InstructionSink<'_>) -> Result<()> {
-        // WASM has far fewer numeric types than we do, so we need to convert to the
-        // canonical representations.
-        let i32_val = match self {
-            // Sign extend.
-            Number::I8(v) => i32::from(*v),
-            Number::U8(v) => i32::from(*v),
-            Number::I32(v) => *v,
-            // Reinterpret bits.
-            Number::U32(v) => v.cast_signed(),
-        };
-        sink.i32_const(i32_val);
-        Ok(())
-    }
 }
 
 impl FromGrammar for Number {
@@ -394,5 +505,22 @@ fn parse_number<T: FromStr>(loc: Loc, type_str: &str, text: &str) -> Result<T, P
             loc.span,
             format!("{} literal out of bounds: {}", type_str, text),
         )),
+    }
+}
+
+impl Emit for Number {
+    fn emit(&self, sink: &mut InstructionSink<'_>) -> Result<()> {
+        // WASM has far fewer numeric types than we do, so we need to convert to the
+        // canonical representations.
+        let i32_val = match self {
+            // Sign extend.
+            Number::I8(v) => i32::from(*v),
+            Number::U8(v) => i32::from(*v),
+            Number::I32(v) => *v,
+            // Reinterpret bits.
+            Number::U32(v) => v.cast_signed(),
+        };
+        sink.i32_const(i32_val);
+        Ok(())
     }
 }

@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use miette::Result;
 use tracing::trace;
 use tree_sitter_wasl_types::nodes;
@@ -5,11 +7,12 @@ use type_sitter::Node as _;
 use wasm_encoder::{FuncType, Function, ValType as WasmValType};
 
 use super::{
-    Block, ExprType, GetExprType, Ident, InferExprType, Local, NodeResultExt, ToWasmType, ValType,
+    Block, ExprType, GetExprType, Ident, InferExprType, LocalSymbol, NodeResultExt, ToWasmType,
+    ValType,
 };
 use crate::{
-    ast::FromGrammar,
-    envs::{DeclTable, LocalEnv, ModuleEnv},
+    ast::{Emit as _, FromGrammar},
+    envs::{FuncEnv, ModuleEnv, SymbolTable},
     errors::{ParseError, TypeCheckError},
     locs::{Loc, Source},
 };
@@ -38,18 +41,22 @@ impl Func {
 
     pub fn emit_impl(&mut self, mod_env: &mut ModuleEnv) -> Result<()> {
         // Set up a LocalEnv, and seed it with our parameters.
-        let mut decls = DeclTable::new();
-        let mut local_env = LocalEnv::new(&mut decls, mod_env.symbol_table());
-        self.sig.params.declare(&mut local_env)?;
+        let mut func_env = FuncEnv::new();
+        let mut syms = mod_env.symbol_table().child();
+        func_env.declare_params(&self.sig, &mut syms)?;
 
         // TODO: Redesign type inference.
-        let body_ty = self.body.infer_expr_type(local_env.symbol_table())?;
+        let body_ty = self.body.infer_expr_type(&mut func_env, &mut syms)?;
         body_ty.expecting(&self.body.loc, &self.sig.returns.expr_type()?)?;
 
-        let locals = vec![];
+        let mut locals = vec![];
+        for (_idx, local) in func_env.locals() {
+            locals.push((1, local.expr_type()?.expect_single().to_wasm_type()));
+        }
+        trace!(f = %self.sig.name(), ?locals, "Declaring WASM locals");
         let mut f = Function::new(locals);
         let mut sink = f.instructions();
-        self.body.emit(&local_env, &mut sink)?;
+        self.body.emit(&mut sink)?;
         sink.end();
         mod_env.insert_code(&f);
         Ok(())
@@ -94,6 +101,10 @@ impl FuncSig {
 
     pub fn name(&self) -> &Ident {
         &self.name
+    }
+
+    pub fn params(&self) -> &Params {
+        &self.params
     }
 
     pub fn returns(&self) -> &Returns {
@@ -172,11 +183,20 @@ impl Params {
             .collect::<Vec<_>>())
     }
 
-    fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
+    pub fn declare(&self, local_env: &mut FuncEnv, syms: &mut SymbolTable) -> Result<()> {
         for param in &self.params {
-            param.declare(local_env)?;
+            param.declare(local_env, syms)?;
         }
         Ok(())
+    }
+}
+
+/// Index a param.
+impl Index<usize> for Params {
+    type Output = Param;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.params[index]
     }
 }
 
@@ -210,9 +230,9 @@ impl Param {
         Param { loc, name, ty }
     }
 
-    fn declare(&self, local_env: &mut LocalEnv) -> Result<()> {
-        let local = Local::new(self.name.clone(), self.ty.clone());
-        local_env.insert_local(self.name.clone(), local)?;
+    fn declare(&self, local_env: &mut FuncEnv, syms: &mut SymbolTable) -> Result<()> {
+        let local = LocalSymbol::new(self.name.clone(), self.ty.clone());
+        local_env.insert_local(self.name.clone(), local, syms)?;
         Ok(())
     }
 
@@ -237,7 +257,8 @@ impl FromGrammar for Param {
 impl InferExprType for Param {
     fn infer_expr_type(
         &mut self,
-        _symbol_table: &crate::envs::SymbolTable<'_>,
+        _env: &mut FuncEnv,
+        _syms: &mut SymbolTable<'_, '_>,
     ) -> Result<ExprType> {
         Ok(ExprType::single(self.ty.clone()))
     }

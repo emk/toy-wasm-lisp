@@ -32,6 +32,7 @@ export default grammar({
 
   supertypes: ($) => [
     $._top_level,
+    $._stmt,
     $._expr,
     $._atom,
     $._linear_val_type,
@@ -90,13 +91,18 @@ export default grammar({
         "{",
         optional(
           seq(
-            field("expr", $._expr),
-            repeat(seq(";", field("expr", $._expr))),
+            field("stmt", $._stmt),
+            repeat(seq(";", field("stmt", $._stmt))),
             field("trailing_semi", optional(";")),
           ),
         ),
         "}",
       ),
+
+    _stmt: ($) => choice($.local, $._expr),
+
+    local: ($) =>
+      seq("local", field("name", $.ident), "=", field("expr", $._expr)),
 
     // Anonymous rule with named children to force creation of an
     // `enum` in Rust `type-sitter` bindings.
